@@ -1,5 +1,4 @@
 pyTelegramBotAPI
-requests
-pytz
 yt-dlp
+ffmpeg-python
 
