@@ -6,12 +6,12 @@ import os
 BOT_TOKEN = "8688563134:AAHs6IP3l4Kbxx8FZx3XmOsSOpgGvjLMhA4"
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# قم بتغيير هذا المعرف إلى معرف البوت الخاص بك
-BOT_USERNAME = "@Filmaxpro_bot" 
+# معرف البوت الخاص بك
+BOT_USERNAME = "@VidGrabber2026_bot" 
 CHANNEL_USERNAME = "@filmaxpro"
 YOUTUBE_LINK = "https://youtube.com/@mosleh_2003?si=iRehojptx4LlM--6"
 
-# رسالة الترحيب الاحترافية الخاصة بك (تم ربطها باسم بوتك تلقائياً)
+# رسالة الترحيب
 welcome_message = f"""📤┇أهلاً بك عزيزي، مع {BOT_USERNAME} يمكنك تحميل من عدة مواقع بصيغ متعددة والاستماع اليها في أي وقت،
 
 📤┇المنصات المدعومة:
@@ -29,6 +29,58 @@ welcome_message = f"""📤┇أهلاً بك عزيزي، مع {BOT_USERNAME} ي
 - قم بإرسال رابط المنشور فقط 📤
 ولا تنسى قم بمشاركه البوت لاصدقائك  📤"""
 
+# رسالة طريقة الاستخدام التي أضفتها أنت
+usage_message = """طريقة استخدام البوت 💡:
+
+💠┇طرق التحميل من اليوتيوب:
+🏷┇من خلال أرسال لي رابط الأغنية من اليوتيوب،
+🖇┇أو أرسال لي أسم الأغنية للبحث عنها في اليوتيوب.
+┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉
+💠┇طرق التحميل من الانستكرام:
+🏷┇قم بأرسال لي رابط الفيديو أو الصورة في الانستكرام،
+🖇┇أو يمكنك تحميل ستوريات أي شخص فقط عبر أرسال لي اليوزر الخاص به.
+┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉
+💠┇طرق التحميل من الفيسبوك:
+🏷┇يمكنك تحميل مقاطع الفيديو العامة من موقع الفيسبوك،
+🖇┇عن طريق أرسال رابط الفيديو فقط.
+┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉
+💠┇طرق التحميل من بينترست:
+🏷┇يمكنك تحميل مقاطع الفيديو العامة من موقع بينترست،
+🖇┇عن طريق أرسال رابط الفيديو فقط.
+🖇┇يمكنك تحميل الصور بحث الاسم صوره
+┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉
+💠┇طرق التحميل من لايكي:
+🏷┇يمكنك تحميل مقاطع الفيديو العامة من موقع لايكي،
+🖇┇عن طريق أرسال رابط الفيديو فقط.
+┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉
+💠┇طرق التحميل من التويتر:
+🏷┇يمكنك تحميل مقاطع الفيديو العامة من موقع تويتر،
+🖇┇عن طريق أرسال رابط الفيديو فقط.
+┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉
+💠┇طرق التحميل من التيك توك:
+🏷┇يمكنك تحميل مقاطع الفيديو العامة من موقع التيك توك،
+🖇┇عن طريق أرسال رابط الفيديو فقط.
+┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉
+💠┇طرق التحميل من السناب جات:
+🏷┇يمكنك تحميل الستوريات العامة من موقع سناب جات،
+🖇┇عن طريق أرسال رابط الحساب فقط.
+┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉
+💠┇طرق التحميل من تيليجرام:
+🏷┇يمكنك تحميل الستوريات العامة من موقع تيليجرام،
+🖇┇عن طريق أرسال رابط الستوري فقط.
+┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉
+💠┇طرق التحميل من ساوند كلاود:
+🏷┇يمكنك تحميل الأغاني العامة من موقع ساوند كلاود،
+🖇┇عن طريق أرسال رابط الأغنية فقط.
+┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉
+💠┇طرق التحميل من ديلي موشن:
+🏷┇يمكنك تحميل الفيديوات العامة من موقع ديلي موشن،
+🖇┇عن طريق أرسال رابط الفيديو فقط.
+┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉ ┉
+💠┇طرق التحميل من فيميو:
+🏷┇يمكنك تحميل الفيديوات العامة من موقع فيميو،
+🖇┇عن طريق أرسال رابط الفيديو فقط."""
+
 # إعدادات متقدمة لتخطي حماية المنصات
 ydl_opts = {
     'format': 'best',
@@ -43,7 +95,7 @@ def check_sub(user_id):
         return member.status in ['member', 'administrator', 'creator']
     except: return True
 
-# أزرار الاشتراك الإجباري (تلجرام + يوتيوب)
+# أزرار الاشتراك الإجباري
 def subscription_markup():
     markup = InlineKeyboardMarkup()
     markup.row_width = 1
@@ -57,21 +109,41 @@ def start(message):
     if not check_sub(message.from_user.id):
         bot.reply_to(message, "عذراً عزيزي، يجب عليك الاشتراك في قنواتنا أولاً 👇", reply_markup=subscription_markup())
         return
-    bot.reply_to(message, welcome_message)
+    
+    # إضافة زر "طريقة الاستخدام" تحت رسالة الترحيب
+    markup = InlineKeyboardMarkup()
+    btn_usage = InlineKeyboardButton("طريقة استخدام البوت 💡", callback_data="show_usage")
+    markup.add(btn_usage)
+    
+    bot.reply_to(message, welcome_message, reply_markup=markup)
+
+# دالة للاستجابة عند الضغط على زر "طريقة الاستخدام"
+@bot.callback_query_handler(func=lambda call: call.data == "show_usage")
+def callback_usage(call):
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, usage_message)
 
 @bot.message_handler(func=lambda message: True)
 def process(message):
     url = message.text
-    if not url.startswith("http"): return
+    
+    # إذا كان النص ليس رابطاً، سيقوم البوت بالبحث عنه كأغنية في يوتيوب (ميزة جديدة!)
+    if not url.startswith("http"): 
+        url = f"ytsearch1:{url}"
     
     if not check_sub(message.from_user.id):
         bot.reply_to(message, "عذراً عزيزي، يجب عليك الاشتراك في قنواتنا أولاً 👇", reply_markup=subscription_markup())
         return
 
-    msg = bot.reply_to(message, "جاري معالجة الفيديو واستخراج الإحصائيات... ⏳")
+    msg = bot.reply_to(message, "جاري معالجة طلبك واستخراج الإحصائيات... ⏳")
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
+            
+            # إذا كان بحثاً عن طريق الاسم، نحتاج لأخذ أول نتيجة
+            if 'entries' in info:
+                info = info['entries'][0]
+                
             filename = ydl.prepare_filename(info)
             
             # جلب الإحصائيات
@@ -79,7 +151,7 @@ def process(message):
             views = info.get('view_count', 0)
             duration = info.get('duration_string', '0:00')
 
-            # الأزرار الشفافة الاحترافية مع زر المشاركة المحدث
+            # الأزرار الشفافة الاحترافية
             markup = InlineKeyboardMarkup()
             markup.row(
                 InlineKeyboardButton(f"❤️ {likes}", callback_data="none"),
@@ -92,7 +164,7 @@ def process(message):
 
             # إرسال الفيديو باسم بوتك
             with open(filename, 'rb') as f:
-                bot.send_video(message.chat.id, f, caption=f"تم تحميل المقطع بنجاح ✅\n{BOT_USERNAME}", reply_markup=markup)
+                bot.send_video(message.chat.id, f, caption=f"تم التحميل بنجاح ✅\n{BOT_USERNAME}", reply_markup=markup)
             
             # تحميل الصوت
             audio_name = filename.rsplit('.', 1)[0] + ".mp3"
@@ -108,7 +180,7 @@ def process(message):
             if os.path.exists(audio_name): os.remove(audio_name)
             
     except Exception as e:
-        bot.edit_message_text("حدث خطأ في جلب الإحصائيات أو التحميل. تأكد من أن الرابط ليس لحساب خاص.", message.chat.id, msg.message_id)
+        bot.edit_message_text("حدث خطأ في جلب الإحصائيات أو التحميل. تأكد من صحة الرابط أو أن الحساب ليس خاصاً.", message.chat.id, msg.message_id)
 
 print("البوت جاهز بجميع الميزات...")
 bot.infinity_polling()
