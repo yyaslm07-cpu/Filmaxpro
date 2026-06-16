@@ -1,5 +1,5 @@
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 import yt_dlp
 import os
 
@@ -14,31 +14,41 @@ ADMIN_ID = 1000369751
 user_langs = {}
 users_db = set()
 
-# قائمة اللغات الشاملة ورسالة الترحيب بالشكل المطلوب
+# إعداد القائمة الجانبية (الاختصارات السريعة)
+bot.set_my_commands([
+    BotCommand("start", "بدء الان"),
+    BotCommand("admin", "الادمن فقط")
+])
+
+# قائمة اللغات الشاملة ورسالة الترحيب
 texts = {
     'ar': {
         'welcome': f"⚖️┇أهلاً بك عزيزي، مع {BOT_USERNAME} يمكنك تحميل من عدة مواقع بصيغ متعددة والاستماع اليها في أي وقت،\n\n💠┇المنصات المدعومة:\n\n📥  يوتيوب         | 📥  انستكرام\n📥  فيسبوك       | 📥  تويتر\n📥  تيك توك       | 📥  سناب شات\n📥  ساوند كلاود  | 📥  بينترست\n📥  لايكي            | 📥  كواي\n📥  تيليجرام       | 📥  PMC Music\n📥  تمبلر            | 📥  ديلي موشن\n📥  فيميو           | 📥  ثريدز\n📥  فانيميت       | 📥  كاب كات\n\n- قم بإرسال رابط المنشور فقط 📥\nولا تنسى قم بمشاركه البوت لاصدقائك  📥",
-        'usage': "💠┇طرق التحميل من البوت:\n\nأرسل رابط المقطع مباشرة من أي منصة مدعومة، أو اكتب اسم الأغنية أو الفيديو وسيقوم البوت بالبحث والتحميل تلقائياً.",
+        'usage': "💠┇طرق التحميل من البوت:\n\nأرسل رابط المقطع مباشرة من أي منصة مدعومة وسيقوم البوت بالتحميل تلقائياً.",
         'force_sub': "عذراً عزيزي، يجب عليك الاشتراك في قنواتنا أولاً 👇",
         'sub_tg': "اشترك في قناة التلجرام 📢",
         'sub_yt': "اشترك في قناة اليوتيوب 📺",
         'usage_btn': "💡 كيفية استخدام البوت.",
         'lang_btn': "🌐 تغيير لغة البوت.",
         'choose_lang': "اختر لغتك المفضلة / Choose your language 👇",
+        'processing': "جاري التحميل... ⏳",
+        'invalid_link': "عذراً، أرسل رابطاً صحيحاً من المنصات المدعومة فقط ❌",
         'success': f"تم تحميل المقطع بنجاح ✅\n{BOT_USERNAME}",
         'audio_cap': f"المقطع الصوتي 🎵\n{BOT_USERNAME}",
         'share': "مشاركة البوت 📤",
         'error': "حدث خطأ، تأكد من صحة الرابط أو أن الحساب ليس خاصاً."
     },
     'en': {
-        'welcome': f"⚖️┇Welcome! With {BOT_USERNAME} you can download from multiple platforms easily,\n\n- Just send the video link or search name 📥",
-        'usage': "💠┇How to use:\nSend the video/audio link directly, or type the name of the song to search on YouTube.",
+        'welcome': f"⚖️┇Welcome! With {BOT_USERNAME} you can download from multiple platforms easily,\n\n- Just send the video link 📥",
+        'usage': "💠┇How to use:\nSend the video/audio link directly.",
         'force_sub': "Sorry, you must subscribe to our channels first 👇",
         'sub_tg': "Subscribe to Telegram 📢",
         'sub_yt': "Subscribe to YouTube 📺",
         'usage_btn': "💡 How to use.",
         'lang_btn': "🌐 Change Language.",
         'choose_lang': "Choose your preferred language 👇",
+        'processing': "Downloading... ⏳",
+        'invalid_link': "Sorry, please send a valid link only ❌",
         'success': f"Downloaded Successfully ✅\n{BOT_USERNAME}",
         'audio_cap': f"Audio Track 🎵\n{BOT_USERNAME}",
         'share': "Share Bot 📤",
@@ -46,13 +56,15 @@ texts = {
     },
     'fr': {
         'welcome': f"⚖️┇Bienvenue! Avec {BOT_USERNAME} vous pouvez télécharger depuis plusieurs sites,\n\n- Envoyez simplement le lien 📥",
-        'usage': "💠┇Comment utiliser:\nEnvoyez le lien de la vidéo ou écrivez le nom de la chanson.",
+        'usage': "💠┇Comment utiliser:\nEnvoyez le lien de la vidéo.",
         'force_sub': "Désolé, vous devez d'abord vous abonner 👇",
         'sub_tg': "S'abonner à Telegram 📢",
         'sub_yt': "S'abonner à YouTube 📺",
         'usage_btn': "💡 Comment utiliser.",
         'lang_btn': "🌐 Changer de langue.",
         'choose_lang': "Choisissez votre langue 👇",
+        'processing': "Téléchargement... ⏳",
+        'invalid_link': "Veuillez envoyer un lien valide ❌",
         'success': f"Téléchargé avec succès ✅\n{BOT_USERNAME}",
         'audio_cap': f"Piste audio 🎵\n{BOT_USERNAME}",
         'share': "Partager le Bot 📤",
@@ -60,13 +72,15 @@ texts = {
     },
     'it': {
         'welcome': f"⚖️┇Benvenuto! Con {BOT_USERNAME} puoi scaricare da molti siti,\n\n- Invia il link 📥",
-        'usage': "💠┇Come usare:\nInvia il link del video o cerca per nome.",
+        'usage': "💠┇Come usare:\nInvia il link del video.",
         'force_sub': "Devi prima iscriverti ai nostri canali 👇",
         'sub_tg': "Iscriviti a Telegram 📢",
         'sub_yt': "Iscriviti a YouTube 📺",
         'usage_btn': "💡 Come usare.",
         'lang_btn': "🌐 Cambia lingua.",
         'choose_lang': "Scegli la tua lingua 👇",
+        'processing': "Scaricamento in corso... ⏳",
+        'invalid_link': "Per favore invia un link valido ❌",
         'success': f"Scaricato con successo ✅\n{BOT_USERNAME}",
         'audio_cap': f"Traccia audio 🎵\n{BOT_USERNAME}",
         'share': "Condividi Bot 📤",
@@ -74,13 +88,15 @@ texts = {
     },
     'hi': {
         'welcome': f"⚖️┇स्वागत है! {BOT_USERNAME} के साथ आप कई साइटों से डाउनलोड कर सकते हैं।\n\n- बस लिंक भेजें 📥",
-        'usage': "💠┇उपयोग कैसे करें:\nवीडियो का लिंक भेजें या गाने का नाम लिखकर खोजें।",
+        'usage': "💠┇उपयोग कैसे करें:\nवीडियो का लिंक भेजें।",
         'force_sub': "क्षमा करें, आपको पहले हमारे चैनल की सदस्यता लेनी होगी 👇",
         'sub_tg': "टेलीग्राम से जुड़ें 📢",
         'sub_yt': "यूट्यूब से जुड़ें 📺",
         'usage_btn': "💡 उपयोग कैसे करें।",
         'lang_btn': "🌐 भाषा बदलें।",
         'choose_lang': "अपनी भाषा चुनें 👇",
+        'processing': "डाउनलोड हो रहा है... ⏳",
+        'invalid_link': "कृपया केवल वैध लिंक भेजें ❌",
         'success': f"सफलतापूर्वक डाउनलोड किया गया ✅\n{BOT_USERNAME}",
         'audio_cap': f"ऑडियो ट्रैक 🎵\n{BOT_USERNAME}",
         'share': "बॉट साझा करें 📤",
@@ -88,13 +104,15 @@ texts = {
     },
     'bn': {
         'welcome': f"⚖️┇স্বাগতম! {BOT_USERNAME} এর মাধ্যমে আপনি অনেক সাইট থেকে ডাউনলোড করতে পারবেন।\n\n- শুধু লিংক পাঠান 📥",
-        'usage': "💠┇কীভাবে ব্যবহার করবেন:\nভিডিও লিংক পাঠান অথবা গানের নাম লিখে অনুসন্ধান করুন।",
+        'usage': "💠┇কীভাবে ব্যবহার করবেন:\nভিডিও লিংক পাঠান।",
         'force_sub': "দুঃখিত, আপনাকে প্রথমে আমাদের চ্যানেলে সাবস্ক্রাইব করতে হবে 👇",
         'sub_tg': "টেলিগ্রামে সাবস্ক্রাইব করুন 📢",
         'sub_yt': "ইউটিউবে সাবস্ক্রাইব করুন 📺",
         'usage_btn': "💡 কীভাবে ব্যবহার করবেন।",
         'lang_btn': "🌐 ভাষা পরিবর্তন করুন।",
         'choose_lang': "আপনার ভাষা নির্বাচন করুন 👇",
+        'processing': "ডাউনলোড হচ্ছে... ⏳",
+        'invalid_link': "অনুগ্রহ করে একটি সঠিক লিংক পাঠান ❌",
         'success': f"সফলভাবে ডাউনলোড হয়েছে ✅\n{BOT_USERNAME}",
         'audio_cap': f"অডিও ট্র্যাক 🎵\n{BOT_USERNAME}",
         'share': "বট শেয়ার করুন 📤",
@@ -102,13 +120,15 @@ texts = {
     },
     'ru': {
         'welcome': f"⚖️┇Добро пожаловать! С {BOT_USERNAME} вы можете скачивать с многих сайтов.\n\n- Просто отправьте ссылку 📥",
-        'usage': "💠┇Как использовать:\nОтправьте ссылку на видео или напишите название для поиска.",
+        'usage': "💠┇Как использовать:\nОтправьте ссылку на видео.",
         'force_sub': "Извините, вы должны сначала подписаться на наши каналы 👇",
         'sub_tg': "Подписаться на Telegram 📢",
         'sub_yt': "Подписаться на YouTube 📺",
         'usage_btn': "💡 Как использовать.",
         'lang_btn': "🌐 Изменить язык.",
         'choose_lang': "Выберите ваш язык 👇",
+        'processing': "Скачивание... ⏳",
+        'invalid_link': "Пожалуйста, отправьте действительную ссылку ❌",
         'success': f"Успешно скачано ✅\n{BOT_USERNAME}",
         'audio_cap': f"Аудиодорожка 🎵\n{BOT_USERNAME}",
         'share': "Поделиться ботом 📤",
@@ -142,11 +162,19 @@ def lang_markup():
     markup.row(InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"))
     return markup
 
-@bot.message_handler(commands=['start', 'cast'])
+@bot.message_handler(commands=['start', 'admin', 'cast'])
 def handle_commands(message):
     chat_id = message.chat.id
     users_db.add(chat_id)
     lang = user_langs.get(chat_id, 'ar')
+
+    # قسم خاص بالمدير
+    if message.text.startswith('/admin'):
+        if chat_id == ADMIN_ID:
+            bot.reply_to(message, "مرحباً بك يا مدير البوت 👑\nلإرسال إذاعة لجميع المستخدمين، اكتب الأمر /cast متبوعاً برسالتك.\nمثال: /cast أهلاً بكم في البوت")
+        else:
+            bot.reply_to(message, "عذراً، هذا الأمر مخصص لإدارة البوت فقط ❌")
+        return
 
     if message.text.startswith('/cast'):
         if chat_id == ADMIN_ID:
@@ -195,22 +223,18 @@ def process_url(message):
     lang = user_langs.get(chat_id, 'ar')
     url = message.text
 
+    # التحقق من أن الرسالة هي رابط فقط، وإلغاء البحث تماماً
+    if not url.startswith("http"):
+        bot.reply_to(message, texts[lang]['invalid_link'])
+        return
+
     if not check_sub(chat_id):
         bot.reply_to(message, texts[lang]['force_sub'], reply_markup=subscription_markup(lang))
         return
         
-    try:
-        # البحث إذا كان النص ليس رابطاً
-        if not url.startswith("http"):
-            search_opts = {'format': 'best', 'quiet': True, 'noplaylist': True}
-            with yt_dlp.YoutubeDL(search_opts) as ydl:
-                info = ydl.extract_info(f"ytsearch1:{url}", download=False)
-                if 'entries' in info and len(info['entries']) > 0:
-                    url = info['entries'][0]['webpage_url']
-                else:
-                    bot.reply_to(message, texts[lang]['error'])
-                    return
+    msg = bot.reply_to(message, texts[lang]['processing'])
 
+    try:
         # 1. تحميل الفيديو وإرساله
         ydl_opts_vid = {'format': 'best', 'outtmpl': '%(id)s.%(ext)s', 'quiet': True, 'nocheckcertificate': True}
         with yt_dlp.YoutubeDL(ydl_opts_vid) as ydl:
@@ -234,12 +258,16 @@ def process_url(message):
         with yt_dlp.YoutubeDL(ydl_opts_aud) as ydl:
             info_a = ydl.extract_info(url, download=True)
             filename_aud = ydl.prepare_filename(info_a)
+            # إضافة title="المقطع الصوتي" لإخفاء الاسم العشوائي للملف في تيليجرام
             with open(filename_aud, 'rb') as f:
-                bot.send_audio(chat_id, f, caption=texts[lang]['audio_cap'])
+                bot.send_audio(chat_id, f, caption=texts[lang]['audio_cap'], title="المقطع الصوتي", performer=BOT_USERNAME)
             if os.path.exists(filename_aud): os.remove(filename_aud)
+            
+        bot.delete_message(chat_id, msg.message_id)
 
     except Exception as e:
-        bot.reply_to(message, texts[lang]['error'])
+        bot.edit_message_text(texts[lang]['error'], chat_id, msg.message_id)
 
-print("البوت يعمل الآن بالنظام التلقائي (فيديو + صوت)...")
+print("البوت الاحترافي يعمل الآن بالكامل...")
 bot.infinity_polling()
+
