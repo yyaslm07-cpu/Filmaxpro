@@ -6,11 +6,13 @@ import os
 BOT_TOKEN = "8688563134:AAHs6IP3l4Kbxx8FZx3XmOsSOpgGvjLMhA4"
 bot = telebot.TeleBot(BOT_TOKEN)
 
+# قم بتغيير هذا المعرف إلى معرف البوت الخاص بك
+BOT_USERNAME = "@Filmaxpro_bot" 
 CHANNEL_USERNAME = "@filmaxpro"
 YOUTUBE_LINK = "https://youtube.com/@mosleh_2003?si=iRehojptx4LlM--6"
 
-# رسالة الترحيب الاحترافية الخاصة بك
-welcome_message = """📤┇أهلاً بك عزيزي، مع @bbt1bot يمكنك تحميل من عدة مواقع بصيغ متعددة والاستماع اليها في أي وقت،
+# رسالة الترحيب الاحترافية الخاصة بك (تم ربطها باسم بوتك تلقائياً)
+welcome_message = f"""📤┇أهلاً بك عزيزي، مع {BOT_USERNAME} يمكنك تحميل من عدة مواقع بصيغ متعددة والاستماع اليها في أي وقت،
 
 📤┇المنصات المدعومة:
 
@@ -77,7 +79,7 @@ def process(message):
             views = info.get('view_count', 0)
             duration = info.get('duration_string', '0:00')
 
-            # الأزرار الشفافة الاحترافية
+            # الأزرار الشفافة الاحترافية مع زر المشاركة المحدث
             markup = InlineKeyboardMarkup()
             markup.row(
                 InlineKeyboardButton(f"❤️ {likes}", callback_data="none"),
@@ -85,21 +87,21 @@ def process(message):
                 InlineKeyboardButton(f"⏱ {duration}", callback_data="none")
             )
             markup.row(
-                InlineKeyboardButton("مشاركة البوت 📤", url="https://t.me/share/url?url=https://t.me/bbt1bot")
+                InlineKeyboardButton("مشاركة البوت 📤", url=f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME[1:]}")
             )
 
-            # إرسال الفيديو
+            # إرسال الفيديو باسم بوتك
             with open(filename, 'rb') as f:
-                bot.send_video(message.chat.id, f, caption="تم تحميل المقطع بنجاح ✅\n@bbt1bot", reply_markup=markup)
+                bot.send_video(message.chat.id, f, caption=f"تم تحميل المقطع بنجاح ✅\n{BOT_USERNAME}", reply_markup=markup)
             
             # تحميل الصوت
             audio_name = filename.rsplit('.', 1)[0] + ".mp3"
             with yt_dlp.YoutubeDL({'format': 'bestaudio/best', 'outtmpl': audio_name}) as ydl_a:
                 ydl_a.download([url])
             
-            # إرسال الصوت
+            # إرسال الصوت باسم بوتك
             with open(audio_name, 'rb') as f:
-                bot.send_audio(message.chat.id, f, caption="المقطع الصوتي 🎵\n@bbt1bot")
+                bot.send_audio(message.chat.id, f, caption=f"المقطع الصوتي 🎵\n{BOT_USERNAME}")
             
             bot.delete_message(message.chat.id, msg.message_id)
             if os.path.exists(filename): os.remove(filename)
@@ -110,4 +112,3 @@ def process(message):
 
 print("البوت جاهز بجميع الميزات...")
 bot.infinity_polling()
-
