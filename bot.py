@@ -1,3 +1,23 @@
+import os
+from flask import Flask
+from threading import Thread
+
+# تشغيل خادم ويب صغير لإرضاء Render
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "البوت يعمل بكامل طاقته!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# تشغيل الويب في خلفية منفصلة
+Thread(target=run_web).start()
+
+# --- هنا يبدأ كود بوت التيليجرام الخاص بك (bot.infinity_polling() إلخ) ---
+
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 import yt_dlp
