@@ -1,4 +1,5 @@
 import os
+import base64
 from flask import Flask
 from threading import Thread
 
@@ -16,19 +17,17 @@ def run_web():
 # تشغيل الويب في خلفية منفصلة
 Thread(target=run_web).start()
 
-# --- هنا يبدأ كود بوت التيليجرام الخاص بك (bot.infinity_polling() إلخ) ---
+# --- كود بوت التيليجرام ---
 
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 import yt_dlp
-import os
 import secrets
 import string
 import glob
 import requests
 
-# ✅ إصلاح 1: استخدم متغيرات بيئة بدل كتابة التوكن مباشرة
-# في الخادم نفذ: export BOT_TOKEN="توكنك"
+# التوكن من متغير بيئة
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "ضع_توكنك_هنا")
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -37,16 +36,19 @@ CHANNEL_USERNAME = "@filmaxpro"
 YOUTUBE_LINK = "https://youtube.com/@mosleh_2003?si=iRehojptx4LlM--6"
 ADMIN_ID = 1983356771
 
-# ✅ الحد الأقصى لحجم الملف (50MB = حد تيليجرام)
+# الحد الأقصى لحجم الملف (50MB = حد تيليجرام)
 MAX_FILE_SIZE_MB = 50
 
 # عدد نتائج البحث في كل صفحة
 RESULTS_PER_PAGE = 5
 
+# ملف الكوكيز (اختياري) — يُضاف فقط إذا كان موجوداً
+COOKIES_FILE = "cookies.txt"
+
 user_langs = {}
 users_db = set()
 
-# ✅ إعدادات Supabase (تُقرأ من متغيرات البيئة في Render)
+# إعدادات Supabase
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 SUPABASE_TABLE = "bot_users"
@@ -65,12 +67,11 @@ def supabase_ready():
 
 
 def db_add_user(user_id):
-    """يحفظ المستخدم في Supabase (يتجاهل إذا موجود) + في الذاكرة."""
+    """يحفظ المستخدم في Supabase + في الذاكرة."""
     users_db.add(user_id)
     if not supabase_ready():
         return
     try:
-        # upsert: لو موجود ما يكرر، لو جديد يضيفه
         url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}"
         headers = _supabase_headers()
         headers["Prefer"] = "resolution=ignore-duplicates,return=minimal"
@@ -81,7 +82,6 @@ def db_add_user(user_id):
 
 
 def db_get_all_users():
-    """يرجّع قائمة كل أرقام المستخدمين من Supabase."""
     if not supabase_ready():
         return list(users_db)
     try:
@@ -97,7 +97,6 @@ def db_get_all_users():
 
 
 def db_count_users():
-    """يرجّع عدد المستخدمين الكلي من Supabase."""
     if not supabase_ready():
         return len(users_db)
     try:
@@ -106,7 +105,6 @@ def db_count_users():
         headers["Prefer"] = "count=exact"
         headers["Range"] = "0-0"
         r = requests.get(url, headers=headers, timeout=15)
-        # العدد يجي في هيدر Content-Range مثل: 0-0/123
         cr = r.headers.get("Content-Range", "")
         if "/" in cr:
             total = cr.split("/")[-1]
@@ -117,7 +115,7 @@ def db_count_users():
     return len(users_db)
 
 
-# تحميل المستخدمين الموجودين عند الإقلاع (مرة وحدة)
+# تحميل المستخدمين عند الإقلاع
 if supabase_ready():
     try:
         db_get_all_users()
@@ -125,9 +123,9 @@ if supabase_ready():
     except Exception as e:
         print(f"تعذّر تحميل المستخدمين عند الإقلاع: {e}")
 else:
-    print("⚠️ Supabase غير مفعّل (لم تُضبط SUPABASE_URL / SUPABASE_KEY) — الحفظ مؤقت فقط")
+    print("⚠️ Supabase غير مفعّل — الحفظ مؤقت فقط")
 
-# ✅ ذاكرة مؤقتة لربط روابط /dl_ بالروابط الحقيقية + نتائج البحث
+# ذاكرة مؤقتة لنتائج البحث
 DL_CACHE = {}       # token -> url
 SEARCH_CACHE = {}   # search_token -> {entries, query, lang}
 
@@ -139,7 +137,7 @@ bot.set_my_commands([
 texts = {
     'ar': {
         'welcome': f"⚖️┇أهلاً بك عزيزي، مع {BOT_USERNAME} يمكنك تحميل من عدة مواقع بصيغ متعددة والاستماع اليها في أي وقت،\n\n💠┇المنصات المدعومة:\n\n📥  يوتيوب         | 📥  انستكرام\n📥  فيسبوك       | 📥  تويتر/X\n📥  تيك توك       | 📥  سناب شات\n📥  ساوند كلاود  | 📥  بينترست\n📥  لايكي            | 📥  كواي\n📥  تيليجرام       | 📥  PMC Music\n📥  تمبلر            | 📥  ديلي موشن\n📥  فيميو           | 📥  ثريدز\n📥  فانيميت       | 📥  كاب كات\n\n- أرسل رابط المنشور للتحميل، أو اكتب اسم أي أغنية/مقطع للبحث 🔎\nولا تنسى قم بمشاركه البوت لاصدقائك  📥",
-        'usage': "💠┇طرق استخدام البوت:\n\n1) أرسل رابط المقطع مباشرة من أي منصة مدعومة وسيعرض لك البوت الجودات للاختيار قبل التحميل.\n\n2) اكتب اسم أي أغنية أو مقطع (بدون رابط) وسيبحث لك البوت ويرسل النتائج، اضغط على /dl_ تحت أي نتيجة لتحميلها.",
+        'usage': "💠┇طرق استخدام البوت:\n\n1) أرسل رابط المقطع مباشرة من أي منصة مدعومة وسيحمّل لك البوت الفيديو ثم الصوت تلقائياً.\n\n2) اكتب اسم أي أغنية أو مقطع (بدون رابط) وسيبحث لك البوت ويرسل النتائج، اضغط على /dl_ تحت أي نتيجة ثم اختر (فيديو/صوت).",
         'force_sub': "عذراً عزيزي، يجب عليك الاشتراك في قنواتنا أولاً 👇",
         'sub_tg': "اشترك في قناة التلجرام 📢",
         'sub_yt': "اشترك في قناة اليوتيوب 📺",
@@ -153,11 +151,9 @@ texts = {
         'share': "مشاركة البوت 📤",
         'error': "حدث خطأ، تأكد من صحة الرابط أو أن الحساب ليس خاصاً.",
         'too_large': f"❌ حجم الملف أكبر من {MAX_FILE_SIZE_MB}MB، لا يمكن إرساله عبر تيليجرام.",
-        # مفاتيح جديدة
         'searching': "🔎 جاري البحث...",
         'no_results': "لا توجد نتائج لبحثك ❌",
-        'fetching_info': "⏳ جاري جلب الجودات المتاحة...",
-        'choose_quality': "اختر الجودة المطلوبة 👇",
+        'choose_type': "اختر طريقة التحميل 👇",
         'expired': "انتهت صلاحية الطلب، أعد إرسال الرابط أو البحث 🔄",
         'search_header': '🔎 : نتائج البحث لـ "{q}"',
         'next_btn': "التالي ➡️",
@@ -167,7 +163,7 @@ texts = {
     },
     'en': {
         'welcome': f"⚖️┇Welcome! With {BOT_USERNAME} you can download from multiple platforms easily,\n\n- Send a link to download, or type any song/clip name to search 🔎",
-        'usage': "💠┇How to use:\n1) Send a link, then pick a quality before downloading.\n2) Type a song/clip name (no link) to search, then tap /dl_ under any result.",
+        'usage': "💠┇How to use:\n1) Send a link, the bot will download the video then the audio automatically.\n2) Type a song/clip name (no link) to search, then tap /dl_ and choose (video/audio).",
         'force_sub': "Sorry, you must subscribe to our channels first 👇",
         'sub_tg': "Subscribe to Telegram 📢",
         'sub_yt': "Subscribe to YouTube 📺",
@@ -181,11 +177,9 @@ texts = {
         'share': "Share Bot 📤",
         'error': "An error occurred. Make sure the link is public.",
         'too_large': f"❌ File size exceeds {MAX_FILE_SIZE_MB}MB, cannot send via Telegram.",
-        # new keys
         'searching': "🔎 Searching...",
         'no_results': "No results found ❌",
-        'fetching_info': "⏳ Fetching available qualities...",
-        'choose_quality': "Choose quality 👇",
+        'choose_type': "Choose download type 👇",
         'expired': "Request expired, please resend 🔄",
         'search_header': '🔎 : Search results for "{q}"',
         'next_btn': "Next ➡️",
@@ -208,7 +202,16 @@ texts = {
         'audio_cap': f"Piste audio 🎵\n{BOT_USERNAME}",
         'share': "Partager le Bot 📤",
         'error': "Une erreur est survenue.",
-        'too_large': f"❌ Fichier trop volumineux (>{MAX_FILE_SIZE_MB}MB)."
+        'too_large': f"❌ Fichier trop volumineux (>{MAX_FILE_SIZE_MB}MB).",
+        'searching': "🔎 Recherche...",
+        'no_results': "Aucun résultat ❌",
+        'choose_type': "Choisissez le type 👇",
+        'expired': "Requête expirée, renvoyez 🔄",
+        'search_header': '🔎 : Résultats pour "{q}"',
+        'next_btn': "Suivant ➡️",
+        'prev_btn': "⬅️ Précédent",
+        'audio_btn': "🎵 Audio MP3",
+        'video_btn': "🎬 Vidéo",
     },
     'it': {
         'welcome': f"⚖️┇Benvenuto! Con {BOT_USERNAME} puoi scaricare da molti siti,\n\n- Invia il link 📥",
@@ -225,7 +228,16 @@ texts = {
         'audio_cap': f"Traccia audio 🎵\n{BOT_USERNAME}",
         'share': "Condividi Bot 📤",
         'error': "Si è verificato un errore.",
-        'too_large': f"❌ File troppo grande (>{MAX_FILE_SIZE_MB}MB)."
+        'too_large': f"❌ File troppo grande (>{MAX_FILE_SIZE_MB}MB).",
+        'searching': "🔎 Ricerca...",
+        'no_results': "Nessun risultato ❌",
+        'choose_type': "Scegli il tipo 👇",
+        'expired': "Richiesta scaduta, reinvia 🔄",
+        'search_header': '🔎 : Risultati per "{q}"',
+        'next_btn': "Avanti ➡️",
+        'prev_btn': "⬅️ Indietro",
+        'audio_btn': "🎵 Audio MP3",
+        'video_btn': "🎬 Video",
     },
     'hi': {
         'welcome': f"⚖️┇स्वागत है! {BOT_USERNAME} के साथ आप कई साइटों से डाउनलोड कर सकते हैं।\n\n- बस लिंक भेजें 📥",
@@ -242,7 +254,16 @@ texts = {
         'audio_cap': f"ऑडियो ट्रैक 🎵\n{BOT_USERNAME}",
         'share': "बॉट साझा करें 📤",
         'error': "एक त्रुटि हुई। लिंक की जांच करें।",
-        'too_large': f"❌ फ़ाइल {MAX_FILE_SIZE_MB}MB से बड़ी है।"
+        'too_large': f"❌ फ़ाइल {MAX_FILE_SIZE_MB}MB से बड़ी है।",
+        'searching': "🔎 खोज रहे हैं...",
+        'no_results': "कोई परिणाम नहीं ❌",
+        'choose_type': "प्रकार चुनें 👇",
+        'expired': "अनुरोध समाप्त, फिर से भेजें 🔄",
+        'search_header': '🔎 : "{q}" के परिणाम',
+        'next_btn': "अगला ➡️",
+        'prev_btn': "⬅️ पिछला",
+        'audio_btn': "🎵 ऑडियो MP3",
+        'video_btn': "🎬 वीडियो",
     },
     'bn': {
         'welcome': f"⚖️┇স্বাগতম! {BOT_USERNAME} এর মাধ্যমে আপনি অনেক সাইট থেকে ডাউনলোড করতে পারবেন।\n\n- শুধু লিংক পাঠান 📥",
@@ -259,7 +280,16 @@ texts = {
         'audio_cap': f"অডিও ট্র্যাক 🎵\n{BOT_USERNAME}",
         'share': "বট শেয়ার করুন 📤",
         'error': "একটি ত্রুটি ঘটেছে। লিংকটি পরীক্ষা করুন।",
-        'too_large': f"❌ ফাইলের আকার {MAX_FILE_SIZE_MB}MB এর বেশি।"
+        'too_large': f"❌ ফাইলের আকার {MAX_FILE_SIZE_MB}MB এর বেশি।",
+        'searching': "🔎 খুঁজছি...",
+        'no_results': "কোন ফলাফল নেই ❌",
+        'choose_type': "ধরন নির্বাচন করুন 👇",
+        'expired': "অনুরোধের মেয়াদ শেষ, আবার পাঠান 🔄",
+        'search_header': '🔎 : "{q}" এর ফলাফল',
+        'next_btn': "পরবর্তী ➡️",
+        'prev_btn': "⬅️ পূর্ববর্তী",
+        'audio_btn': "🎵 অডিও MP3",
+        'video_btn': "🎬 ভিডিও",
     },
     'ru': {
         'welcome': f"⚖️┇Добро пожаловать! С {BOT_USERNAME} вы можете скачивать с многих сайтов.\n\n- Просто отправьте ссылку 📥",
@@ -276,12 +306,20 @@ texts = {
         'audio_cap': f"Аудиодорожка 🎵\n{BOT_USERNAME}",
         'share': "Поделиться ботом 📤",
         'error': "Произошла ошибка. Проверьте ссылку.",
-        'too_large': f"❌ Файл больше {MAX_FILE_SIZE_MB}MB, невозможно отправить."
+        'too_large': f"❌ Файл больше {MAX_FILE_SIZE_MB}MB, невозможно отправить.",
+        'searching': "🔎 Поиск...",
+        'no_results': "Ничего не найдено ❌",
+        'choose_type': "Выберите тип 👇",
+        'expired': "Запрос истёк, отправьте снова 🔄",
+        'search_header': '🔎 : Результаты для "{q}"',
+        'next_btn': "Далее ➡️",
+        'prev_btn': "⬅️ Назад",
+        'audio_btn': "🎵 Аудио MP3",
+        'video_btn': "🎬 Видео",
     }
 }
 
 
-# ✅ دالة آمنة لجلب النصوص الجديدة مع رجوع تلقائي للعربية/الإنجليزية
 def t(lang, key):
     return (texts.get(lang, {}).get(key)
             or texts['ar'].get(key)
@@ -289,12 +327,20 @@ def t(lang, key):
             or key)
 
 
-# ✅ توليد رمز قصير آمن للأوامر (حروف وأرقام فقط)
 def rand_token(n=10):
     return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(n))
 
 
-# ✅ تنظيف بسيط للذاكرة المؤقتة لمنع تضخمها
+# ترميز/فك ترميز معرّف الفيديو (يجعل /dl_ يعمل حتى بعد إعادة تشغيل السيرفر)
+def encode_id(video_id):
+    return base64.urlsafe_b64encode(video_id.encode()).decode().rstrip('=')
+
+
+def decode_id(token):
+    pad = '=' * (-len(token) % 4)
+    return base64.urlsafe_b64decode(token + pad).decode()
+
+
 def _trim_caches():
     if len(DL_CACHE) > 6000:
         DL_CACHE.clear()
@@ -326,27 +372,31 @@ def fmt_views(v):
     return str(v)
 
 
-# ✅ إصلاح 2: إعدادات yt_dlp المحسّنة لدعم جميع المنصات
+# يضيف الكوكيز فقط إذا الملف موجود (يمنع الخطأ إذا لم يُرفع)
+def _add_cookies(opts):
+    if os.path.exists(COOKIES_FILE):
+        opts['cookiefile'] = COOKIES_FILE
+    return opts
+
+
 def get_ydl_opts_video(output_template):
-    return {
+    return _add_cookies({
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': output_template,
         'quiet': True,
         'nocheckcertificate': True,
         'merge_output_format': 'mp4',
-        # ✅ Headers تساعد في تجاوز حماية بعض المنصات (Instagram, TikTok, إلخ)
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
         },
-        # ✅ إيقاف playlist تلقائياً (لمنع تحميل قوائم كاملة)
         'noplaylist': True,
         'max_filesize': MAX_FILE_SIZE_MB * 1024 * 1024,
-    }
+    })
 
 
 def get_ydl_opts_audio(output_template):
-    return {
+    return _add_cookies({
         'format': 'bestaudio/best',
         'outtmpl': output_template,
         'quiet': True,
@@ -355,51 +405,22 @@ def get_ydl_opts_audio(output_template):
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
-        # ✅ إصلاح 3: تحويل الصوت لـ mp3 بدلاً من webm لدعم كل الأجهزة
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
-    }
+    })
 
 
-# ✅ جديد: إعدادات تحميل حسب الجودة المختارة
-def get_ydl_opts_quality(output_template, quality):
-    opts = get_ydl_opts_video(output_template)
-    opts.pop('max_filesize', None)  # نتحقق من الحجم يدوياً بعد التحميل
-    if quality == 'best':
-        opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-    else:
-        h = int(quality)
-        opts['format'] = (
-            f'bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/'
-            f'best[height<={h}][ext=mp4]/best[height<={h}]/best'
-        )
-    return opts
-
-
-# ✅ جديد: إعدادات البحث (سريع، بدون تحميل)
 def get_ydl_opts_search():
-    return {
+    return _add_cookies({
         'quiet': True,
         'nocheckcertificate': True,
         'extract_flat': True,
         'skip_download': True,
         'default_search': 'ytsearch',
-    }
-
-
-def get_ydl_opts_info():
-    return {
-        'quiet': True,
-        'nocheckcertificate': True,
-        'noplaylist': True,
-        'skip_download': True,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
-    }
+    })
 
 
 def check_sub(user_id):
@@ -430,222 +451,171 @@ def main_markup(lang):
 
 def lang_markup():
     markup = InlineKeyboardMarkup()
-    markup.row(InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"))
-    markup.row(InlineKeyboardButton("🇫🇷 Français", callback_data="lang_fr"), InlineKeyboardButton("🇮🇹 Italiano", callback_data="lang_it"))
-    markup.row(InlineKeyboardButton("🇮🇳 हिन्दी", callback_data="lang_hi"), InlineKeyboardButton("🇧🇩 বাংলা", callback_data="lang_bn"))
+    markup.row(InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"),
+               InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"))
+    markup.row(InlineKeyboardButton("🇫🇷 Français", callback_data="lang_fr"),
+               InlineKeyboardButton("🇮🇹 Italiano", callback_data="lang_it"))
+    markup.row(InlineKeyboardButton("🇮🇳 हिन्दी", callback_data="lang_hi"),
+               InlineKeyboardButton("🇧🇩 বাংলা", callback_data="lang_bn"))
     markup.row(InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"))
     return markup
 
 
-# ✅ جديد: بناء أزرار الجودة من معلومات الفيديو
-def build_quality_markup(info, token, lang):
-    formats = info.get('formats', []) or []
-    heights = sorted({
-        f['height'] for f in formats
-        if f.get('height') and f.get('vcodec') not in (None, 'none')
-    })
-    preferred = [144, 240, 360, 480, 720, 1080, 1440, 2160]
-    filtered = [h for h in heights if h in preferred]
-    heights = filtered or heights
-
+# أزرار اختيار طريقة التحميل: فيديو أو صوت فقط (للتحميل بالاسم/البحث)
+def build_type_markup(token, lang):
     markup = InlineKeyboardMarkup(row_width=2)
-    row = []
-    if heights:
-        for h in heights:
-            row.append(InlineKeyboardButton(f"🎬 {h}p", callback_data=f"dl|{token}|{h}"))
-            if len(row) == 2:
-                markup.row(*row)
-                row = []
-        if row:
-            markup.row(*row)
-    else:
-        # منصات بجودة واحدة (تيك توك/انستقرام أحياناً)
-        markup.row(InlineKeyboardButton(t(lang, 'video_btn'), callback_data=f"dl|{token}|best"))
-
-    markup.row(InlineKeyboardButton(t(lang, 'audio_btn'), callback_data=f"dl|{token}|audio"))
+    markup.row(
+        InlineKeyboardButton(t(lang, 'video_btn'), callback_data=f"dl|{token}|video"),
+        InlineKeyboardButton(t(lang, 'audio_btn'), callback_data=f"dl|{token}|audio")
+    )
     return markup
 
 
-# ✅ جديد: عرض الجودات لرابط معين قبل التحميل
-def send_quality_options(message, url, lang):
-    # ✅ السلوك المطلوب: تحميل مباشر للفيديو + الصوت بدون اختيار جودة
-    chat_id = message.chat.id
-    status = bot.reply_to(message, texts[lang]['processing'])  # "جاري التحميل... ⏳"
-    token2 = rand_token()
-    vid_file = None
-    aud_file = None
+# عند الضغط على /dl_ (تحميل بالاسم): نعرض زرّي فيديو/صوت
+def send_type_options(message, url, lang):
+    token = rand_token()
+    _trim_caches()
+    DL_CACHE[token] = url
+    bot.reply_to(message, t(lang, 'choose_type'), reply_markup=build_type_markup(token, lang))
+
+
+def _report(chat_id, status_msg_id, text):
     try:
-        # ── تحميل الفيديو ──
-        vid_template = f'vid_{chat_id}_{token2}.%(ext)s'
-        with yt_dlp.YoutubeDL(get_ydl_opts_video(vid_template)) as ydl:
-            info = ydl.extract_info(url, download=True)
-            vid_file = ydl.prepare_filename(info)
-
-        # بعد الدمج قد يصبح الامتداد mp4
-        if vid_file and not os.path.exists(vid_file):
-            base = os.path.splitext(vid_file)[0]
-            if os.path.exists(base + '.mp4'):
-                vid_file = base + '.mp4'
-
-        if vid_file and os.path.exists(vid_file):
-            size_mb = os.path.getsize(vid_file) / (1024 * 1024)
-            if size_mb > MAX_FILE_SIZE_MB:
-                bot.edit_message_text(texts[lang]['too_large'], chat_id, status.message_id)
-            else:
-                likes = info.get('like_count') or 0
-                views = info.get('view_count') or 0
-                duration = info.get('duration_string') or fmt_duration(info.get('duration'))
-
-                markup = InlineKeyboardMarkup()
-                markup.row(
-                    InlineKeyboardButton(f"❤️ {likes:,}", callback_data="n"),
-                    InlineKeyboardButton(f"👁 {views:,}", callback_data="n"),
-                    InlineKeyboardButton(f"⏱ {duration}", callback_data="n")
-                )
-                markup.row(InlineKeyboardButton(
-                    texts[lang]['share'],
-                    url=f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME[1:]}"
-                ))
-
-                with open(vid_file, 'rb') as f:
-                    bot.send_video(chat_id, f, caption=texts[lang]['success'],
-                                   reply_markup=markup, reply_to_message_id=message.message_id)
-
-        # ── تحميل الصوت بصيغة mp3 ──
-        aud_template = f'aud_{chat_id}_{token2}.%(ext)s'
-        with yt_dlp.YoutubeDL(get_ydl_opts_audio(aud_template)) as ydl:
-            info_a = ydl.extract_info(url, download=True)
-        aud_file = f'aud_{chat_id}_{token2}.mp3'
-        if os.path.exists(aud_file):
-            size_a = os.path.getsize(aud_file) / (1024 * 1024)
-            if size_a <= MAX_FILE_SIZE_MB:
-                with open(aud_file, 'rb') as f:
-                    bot.send_audio(
-                        chat_id, f,
-                        caption=texts[lang]['audio_cap'],
-                        title=info_a.get('title', 'Audio'),
-                        performer=BOT_USERNAME
-                    )
-
-        # حذف رسالة "جاري التحميل"
+        if status_msg_id:
+            bot.edit_message_text(text, chat_id, status_msg_id)
+        else:
+            bot.send_message(chat_id, text)
+    except:
         try:
-            bot.delete_message(chat_id, status.message_id)
+            bot.send_message(chat_id, text)
         except:
             pass
 
-    except Exception as e:
-        print(f"Download error for {chat_id}: {e}")
-        try:
-            bot.edit_message_text(texts[lang]['error'], chat_id, status.message_id)
-        except:
-            bot.send_message(chat_id, texts[lang]['error'])
-    finally:
-        for pattern in (f'vid_{chat_id}_{token2}.*', f'aud_{chat_id}_{token2}.*'):
-            for f in glob.glob(pattern):
-                try:
-                    os.remove(f)
-                except:
-                    pass
 
-
-# ✅ جديد: التحميل الفعلي بالجودة المختارة
-def do_download(chat_id, url, quality, lang, status_msg_id=None):
+# تحميل الفيديو فقط (يُستخدم للتحميل بالاسم عند اختيار "فيديو")
+def download_video(chat_id, url, lang, status_msg_id=None, reply_to=None):
     token2 = rand_token()
     out_file = None
+    ok = False
     try:
-        if quality == 'audio':
-            template = f'aud_{chat_id}_{token2}.%(ext)s'
-            with yt_dlp.YoutubeDL(get_ydl_opts_audio(template)) as ydl:
-                info = ydl.extract_info(url, download=True)
-            out_file = f'aud_{chat_id}_{token2}.mp3'
-            if os.path.exists(out_file):
-                size_mb = os.path.getsize(out_file) / (1024 * 1024)
-                if size_mb > MAX_FILE_SIZE_MB:
-                    if status_msg_id:
-                        bot.edit_message_text(texts[lang]['too_large'], chat_id, status_msg_id)
-                    else:
-                        bot.send_message(chat_id, texts[lang]['too_large'])
-                    return
-                with open(out_file, 'rb') as f:
-                    bot.send_audio(
-                        chat_id, f,
-                        caption=texts[lang]['audio_cap'],
-                        title=info.get('title', 'Audio'),
-                        performer=BOT_USERNAME
-                    )
-        else:
-            template = f'vid_{chat_id}_{token2}.%(ext)s'
-            with yt_dlp.YoutubeDL(get_ydl_opts_quality(template, quality)) as ydl:
-                info = ydl.extract_info(url, download=True)
-                out_file = ydl.prepare_filename(info)
+        template = f'vid_{chat_id}_{token2}.%(ext)s'
+        with yt_dlp.YoutubeDL(get_ydl_opts_video(template)) as ydl:
+            info = ydl.extract_info(url, download=True)
+            out_file = ydl.prepare_filename(info)
 
-            # بعد الدمج قد يصبح الامتداد mp4
-            if out_file and not os.path.exists(out_file):
-                base = os.path.splitext(out_file)[0]
-                if os.path.exists(base + '.mp4'):
-                    out_file = base + '.mp4'
+        if out_file and not os.path.exists(out_file):
+            base = os.path.splitext(out_file)[0]
+            if os.path.exists(base + '.mp4'):
+                out_file = base + '.mp4'
 
-            if out_file and os.path.exists(out_file):
-                size_mb = os.path.getsize(out_file) / (1024 * 1024)
-                if size_mb > MAX_FILE_SIZE_MB:
-                    if status_msg_id:
-                        bot.edit_message_text(texts[lang]['too_large'], chat_id, status_msg_id)
-                    else:
-                        bot.send_message(chat_id, texts[lang]['too_large'])
-                    return
+        if out_file and os.path.exists(out_file):
+            size_mb = os.path.getsize(out_file) / (1024 * 1024)
+            if size_mb > MAX_FILE_SIZE_MB:
+                _report(chat_id, status_msg_id, texts[lang]['too_large'])
+                return False
 
-                likes = info.get('like_count') or 0
-                views = info.get('view_count') or 0
-                duration = info.get('duration_string') or fmt_duration(info.get('duration'))
+            likes = info.get('like_count') or 0
+            views = info.get('view_count') or 0
+            duration = info.get('duration_string') or fmt_duration(info.get('duration'))
 
-                markup = InlineKeyboardMarkup()
-                markup.row(
-                    InlineKeyboardButton(f"❤️ {likes:,}", callback_data="n"),
-                    InlineKeyboardButton(f"👁 {views:,}", callback_data="n"),
-                    InlineKeyboardButton(f"⏱ {duration}", callback_data="n")
-                )
-                markup.row(InlineKeyboardButton(
-                    texts[lang]['share'],
-                    url=f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME[1:]}"
-                ))
+            markup = InlineKeyboardMarkup()
+            markup.row(
+                InlineKeyboardButton(f"❤️ {likes:,}", callback_data="n"),
+                InlineKeyboardButton(f"👁 {views:,}", callback_data="n"),
+                InlineKeyboardButton(f"⏱ {duration}", callback_data="n")
+            )
+            markup.row(InlineKeyboardButton(
+                texts[lang]['share'],
+                url=f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME[1:]}"
+            ))
 
-                with open(out_file, 'rb') as f:
-                    bot.send_video(chat_id, f, caption=texts[lang]['success'], reply_markup=markup)
-
-        # حذف رسالة الحالة بعد النجاح
-        if status_msg_id:
+            with open(out_file, 'rb') as f:
+                bot.send_video(chat_id, f, caption=texts[lang]['success'],
+                               reply_markup=markup, reply_to_message_id=reply_to)
+            ok = True
+    except Exception as e:
+        print(f"Video download error for {chat_id}: {e}")
+        _report(chat_id, status_msg_id, texts[lang]['error'])
+    finally:
+        for f in glob.glob(f'vid_{chat_id}_{token2}.*'):
             try:
-                bot.delete_message(chat_id, status_msg_id)
+                os.remove(f)
             except:
                 pass
+    return ok
 
+
+# تحميل الصوت فقط (mp3)
+def download_audio(chat_id, url, lang, status_msg_id=None):
+    token2 = rand_token()
+    ok = False
+    try:
+        template = f'aud_{chat_id}_{token2}.%(ext)s'
+        with yt_dlp.YoutubeDL(get_ydl_opts_audio(template)) as ydl:
+            info = ydl.extract_info(url, download=True)
+        out_file = f'aud_{chat_id}_{token2}.mp3'
+        if os.path.exists(out_file):
+            size_mb = os.path.getsize(out_file) / (1024 * 1024)
+            if size_mb > MAX_FILE_SIZE_MB:
+                _report(chat_id, status_msg_id, texts[lang]['too_large'])
+                return False
+            with open(out_file, 'rb') as f:
+                bot.send_audio(
+                    chat_id, f,
+                    caption=texts[lang]['audio_cap'],
+                    title=info.get('title', 'Audio'),
+                    performer=BOT_USERNAME
+                )
+            ok = True
     except Exception as e:
-        print(f"Download error for {chat_id}: {e}")
+        print(f"Audio download error for {chat_id}: {e}")
+        _report(chat_id, status_msg_id, texts[lang]['error'])
+    finally:
+        for f in glob.glob(f'aud_{chat_id}_{token2}.*'):
+            try:
+                os.remove(f)
+            except:
+                pass
+    return ok
+
+
+# التحميل بالاسم (من زرّي البحث): نوع واحد فقط حسب الاختيار
+def do_download_choice(chat_id, url, kind, lang, status_msg_id=None):
+    if kind == 'audio':
+        ok = download_audio(chat_id, url, lang, status_msg_id)
+    else:
+        ok = download_video(chat_id, url, lang, status_msg_id)
+    if ok and status_msg_id:
         try:
-            if status_msg_id:
-                bot.edit_message_text(texts[lang]['error'], chat_id, status_msg_id)
-            else:
-                bot.send_message(chat_id, texts[lang]['error'])
+            bot.delete_message(chat_id, status_msg_id)
         except:
             pass
-    finally:
-        # حذف كل الملفات المؤقتة المرتبطة بهذا الطلب
-        for pattern in (f'vid_{chat_id}_{token2}.*', f'aud_{chat_id}_{token2}.*'):
-            for f in glob.glob(pattern):
-                try:
-                    os.remove(f)
-                except:
-                    pass
 
 
-# ✅ جديد: تنفيذ البحث
+# التحميل بالرابط المباشر: فيديو ثم صوت تلقائياً
+def do_download_link(message, url, lang):
+    chat_id = message.chat.id
+    status = bot.reply_to(message, texts[lang]['processing'])
+    # 1) الفيديو
+    download_video(chat_id, url, lang, status.message_id, reply_to=message.message_id)
+    # 2) الصوت تلقائياً (بدون رسالة خطأ إن فشل الصوت فقط)
+    try:
+        download_audio(chat_id, url, lang, status_msg_id=None)
+    except Exception as e:
+        print(f"Auto-audio error for {chat_id}: {e}")
+    # حذف رسالة "جاري التحميل"
+    try:
+        bot.delete_message(chat_id, status.message_id)
+    except:
+        pass
+
+
 def do_search(query, max_results=20):
     with yt_dlp.YoutubeDL(get_ydl_opts_search()) as ydl:
         info = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
     return info.get('entries', []) or []
 
 
-# ✅ جديد: بناء نص + أزرار صفحة نتائج البحث
 def render_search_page(stoken, page):
     data = SEARCH_CACHE.get(stoken)
     if not data:
@@ -683,7 +653,6 @@ def render_search_page(stoken, page):
     return text, markup
 
 
-# ✅ جديد: معالجة البحث
 def handle_search(message, query):
     chat_id = message.chat.id
     lang = user_langs.get(chat_id, 'ar')
@@ -702,7 +671,7 @@ def handle_search(message, query):
         stoken = rand_token()
         _trim_caches()
         for e in entries:
-            tok = rand_token()
+            tok = encode_id(e['id'])
             e['dl_token'] = tok
             DL_CACHE[tok] = f"https://www.youtube.com/watch?v={e['id']}"
         SEARCH_CACHE[stoken] = {'entries': entries, 'query': query, 'lang': lang}
@@ -766,7 +735,6 @@ def handle_cast(message):
         bot.reply_to(message, "اكتب الرسالة بعد الأمر هكذا:\n/cast رسالتكم")
         return
     broadcast_msg = parts[1].strip()
-    # نجيب أحدث قائمة كاملة من Supabase
     all_users = db_get_all_users()
     status = bot.reply_to(message, f"⏳ جاري الإرسال إلى {len(all_users)} مستخدم...")
     success = 0
@@ -786,7 +754,7 @@ def handle_cast(message):
         bot.reply_to(message, f"✅ تم الإرسال إلى {success} مستخدم.")
 
 
-# ✅ جديد: معالج أوامر /dl_ القادمة من نتائج البحث
+# معالج أوامر /dl_ القادمة من نتائج البحث (تحميل بالاسم → زرّين)
 @bot.message_handler(func=lambda m: bool(m.text) and m.text.startswith('/dl_'))
 def handle_dl(message):
     chat_id = message.chat.id
@@ -800,9 +768,15 @@ def handle_dl(message):
     token = message.text.strip()[4:].split('@')[0].split()[0]
     url = DL_CACHE.get(token)
     if not url:
+        try:
+            vid = decode_id(token)
+            url = f"https://www.youtube.com/watch?v={vid}"
+        except Exception:
+            url = None
+    if not url:
         bot.reply_to(message, t(lang, 'expired'))
         return
-    send_quality_options(message, url, lang)
+    send_type_options(message, url, lang)
 
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -823,9 +797,10 @@ def callback_inline(call):
         if new_lang in texts:
             user_langs[chat_id] = new_lang
             bot.answer_callback_query(call.id, "✅ Done", show_alert=False)
-            bot.edit_message_text(texts[new_lang]['welcome'], chat_id, call.message.message_id, reply_markup=main_markup(new_lang))
+            bot.edit_message_text(texts[new_lang]['welcome'], chat_id,
+                                  call.message.message_id, reply_markup=main_markup(new_lang))
 
-    # ✅ جديد: التنقل بين صفحات البحث
+    # التنقل بين صفحات البحث
     elif call.data.startswith("pg|"):
         try:
             _, stoken, page = call.data.split("|")
@@ -845,10 +820,10 @@ def callback_inline(call):
             except:
                 pass
 
-    # ✅ جديد: اختيار الجودة وبدء التحميل
+    # اختيار النوع (فيديو/صوت) وبدء التحميل بالاسم
     elif call.data.startswith("dl|"):
         try:
-            _, token, quality = call.data.split("|")
+            _, token, kind = call.data.split("|")
         except:
             bot.answer_callback_query(call.id)
             return
@@ -861,10 +836,9 @@ def callback_inline(call):
             bot.edit_message_text(texts[lang]['processing'], chat_id, call.message.message_id)
         except:
             pass
-        do_download(chat_id, url, quality, lang, call.message.message_id)
+        do_download_choice(chat_id, url, kind, lang, call.message.message_id)
 
     elif call.data == "n":
-        # زر معلوماتي فقط، لا يفعل شيئاً
         bot.answer_callback_query(call.id)
 
 
@@ -877,20 +851,20 @@ def process_url(message):
     lang = user_langs.get(chat_id, 'ar')
     text = message.text.strip()
 
-    # تجاهل الأوامر غير المعروفة
     if text.startswith('/'):
         return
 
     if text.startswith("http"):
-        # رابط → عرض الجودات قبل التحميل
+        # تحميل بالرابط → فيديو ثم صوت تلقائياً
         if not check_sub(chat_id):
             bot.reply_to(message, texts[lang]['force_sub'], reply_markup=subscription_markup(lang))
             return
-        send_quality_options(message, text, lang)
+        do_download_link(message, text, lang)
     else:
         # نص عادي → بحث
         handle_search(message, text)
 
 
 print("✅ البوت يعمل الآن...")
-bot.infinity_polling()
+bot.remove_webhook()
+bot.infinity_polling(skip_pending=True, timeout=30)
