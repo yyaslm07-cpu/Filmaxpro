@@ -35,7 +35,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 BOT_USERNAME = "@VidGrabber2026_bot"
 CHANNEL_USERNAME = "@filmaxpro"
 YOUTUBE_LINK = "https://youtube.com/@mosleh_2003?si=iRehojptx4LlM--6"
-ADMIN_ID = 1000369751
+ADMIN_ID = 1983356771
 
 # ✅ الحد الأقصى لحجم الملف (50MB = حد تيليجرام)
 MAX_FILE_SIZE_MB = 50
