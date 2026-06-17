@@ -25,6 +25,7 @@ import os
 import secrets
 import string
 import glob
+import requests
 
 # ✅ إصلاح 1: استخدم متغيرات بيئة بدل كتابة التوكن مباشرة
 # في الخادم نفذ: export BOT_TOKEN="توكنك"
@@ -44,6 +45,87 @@ RESULTS_PER_PAGE = 5
 
 user_langs = {}
 users_db = set()
+
+# ✅ إعدادات Supabase (تُقرأ من متغيرات البيئة في Render)
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+SUPABASE_TABLE = "bot_users"
+
+
+def _supabase_headers():
+    return {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+    }
+
+
+def supabase_ready():
+    return bool(SUPABASE_URL and SUPABASE_KEY)
+
+
+def db_add_user(user_id):
+    """يحفظ المستخدم في Supabase (يتجاهل إذا موجود) + في الذاكرة."""
+    users_db.add(user_id)
+    if not supabase_ready():
+        return
+    try:
+        # upsert: لو موجود ما يكرر، لو جديد يضيفه
+        url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}"
+        headers = _supabase_headers()
+        headers["Prefer"] = "resolution=ignore-duplicates,return=minimal"
+        requests.post(url, headers=headers,
+                      json={"user_id": user_id}, timeout=10)
+    except Exception as e:
+        print(f"Supabase add error: {e}")
+
+
+def db_get_all_users():
+    """يرجّع قائمة كل أرقام المستخدمين من Supabase."""
+    if not supabase_ready():
+        return list(users_db)
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?select=user_id"
+        r = requests.get(url, headers=_supabase_headers(), timeout=15)
+        if r.status_code == 200:
+            ids = [row["user_id"] for row in r.json()]
+            users_db.update(ids)
+            return ids
+    except Exception as e:
+        print(f"Supabase get error: {e}")
+    return list(users_db)
+
+
+def db_count_users():
+    """يرجّع عدد المستخدمين الكلي من Supabase."""
+    if not supabase_ready():
+        return len(users_db)
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?select=user_id"
+        headers = _supabase_headers()
+        headers["Prefer"] = "count=exact"
+        headers["Range"] = "0-0"
+        r = requests.get(url, headers=headers, timeout=15)
+        # العدد يجي في هيدر Content-Range مثل: 0-0/123
+        cr = r.headers.get("Content-Range", "")
+        if "/" in cr:
+            total = cr.split("/")[-1]
+            if total.isdigit():
+                return int(total)
+    except Exception as e:
+        print(f"Supabase count error: {e}")
+    return len(users_db)
+
+
+# تحميل المستخدمين الموجودين عند الإقلاع (مرة وحدة)
+if supabase_ready():
+    try:
+        db_get_all_users()
+        print(f"✅ تم تحميل {len(users_db)} مستخدم من Supabase")
+    except Exception as e:
+        print(f"تعذّر تحميل المستخدمين عند الإقلاع: {e}")
+else:
+    print("⚠️ Supabase غير مفعّل (لم تُضبط SUPABASE_URL / SUPABASE_KEY) — الحفظ مؤقت فقط")
 
 # ✅ ذاكرة مؤقتة لربط روابط /dl_ بالروابط الحقيقية + نتائج البحث
 DL_CACHE = {}       # token -> url
@@ -583,7 +665,7 @@ def handle_search(message, query):
 @bot.message_handler(commands=['start'])
 def handle_start(message):
     chat_id = message.chat.id
-    users_db.add(chat_id)
+    db_add_user(chat_id)
     lang = user_langs.get(chat_id, 'ar')
     if not check_sub(chat_id):
         bot.reply_to(message, texts[lang]['force_sub'], reply_markup=subscription_markup(lang))
@@ -595,9 +677,27 @@ def handle_start(message):
 def handle_admin(message):
     chat_id = message.chat.id
     if chat_id == ADMIN_ID:
-        bot.reply_to(message, "مرحباً بك يا مدير البوت 👑\nلإرسال إذاعة لجميع المستخدمين، اكتب:\n/cast رسالتكم")
+        count = db_count_users()
+        bot.reply_to(
+            message,
+            "مرحباً بك يا مدير البوت 👑\n\n"
+            f"👥 عدد المستخدمين: {count}\n\n"
+            "الأوامر المتاحة لك:\n"
+            "• /stats — عرض عدد المستخدمين\n"
+            "• /cast رسالتك — إرسال إذاعة لجميع المستخدمين"
+        )
     else:
         bot.reply_to(message, "عذراً، هذا الأمر مخصص لإدارة البوت فقط ❌")
+
+
+@bot.message_handler(commands=['stats'])
+def handle_stats(message):
+    chat_id = message.chat.id
+    if chat_id != ADMIN_ID:
+        return
+    count = db_count_users()
+    storage = "Supabase (دائم) ✅" if supabase_ready() else "ذاكرة مؤقتة ⚠️"
+    bot.reply_to(message, f"📊 إحصائيات البوت\n\n👥 عدد المستخدمين: {count}\n💾 التخزين: {storage}")
 
 
 @bot.message_handler(commands=['cast'])
@@ -610,21 +710,31 @@ def handle_cast(message):
         bot.reply_to(message, "اكتب الرسالة بعد الأمر هكذا:\n/cast رسالتكم")
         return
     broadcast_msg = parts[1].strip()
+    # نجيب أحدث قائمة كاملة من Supabase
+    all_users = db_get_all_users()
+    status = bot.reply_to(message, f"⏳ جاري الإرسال إلى {len(all_users)} مستخدم...")
     success = 0
-    for uid in users_db.copy():
+    failed = 0
+    for uid in all_users:
         try:
             bot.send_message(uid, f"📢 رسالة من الإدارة:\n\n{broadcast_msg}")
             success += 1
         except:
-            pass
-    bot.reply_to(message, f"✅ تم إرسال الإذاعة إلى {success} مستخدم.")
+            failed += 1
+    try:
+        bot.edit_message_text(
+            f"✅ تم إرسال الإذاعة.\n\n📨 وصلت: {success}\n❌ فشلت: {failed}",
+            chat_id, status.message_id
+        )
+    except:
+        bot.reply_to(message, f"✅ تم الإرسال إلى {success} مستخدم.")
 
 
 # ✅ جديد: معالج أوامر /dl_ القادمة من نتائج البحث
 @bot.message_handler(func=lambda m: bool(m.text) and m.text.startswith('/dl_'))
 def handle_dl(message):
     chat_id = message.chat.id
-    users_db.add(chat_id)
+    db_add_user(chat_id)
     lang = user_langs.get(chat_id, 'ar')
 
     if not check_sub(chat_id):
@@ -707,7 +817,7 @@ def process_url(message):
     if not message.text:
         return
     chat_id = message.chat.id
-    users_db.add(chat_id)
+    db_add_user(chat_id)
     lang = user_langs.get(chat_id, 'ar')
     text = message.text.strip()
 
