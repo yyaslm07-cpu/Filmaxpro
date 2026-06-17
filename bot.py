@@ -893,4 +893,5 @@ def process_url(message):
 
 
 print("✅ البوت يعمل الآن...")
-bot.infinity_polling()
+bot.remove_webhook()
+bot.infinity_polling(skip_pending=True, timeout=30)
