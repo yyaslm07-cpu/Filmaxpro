@@ -468,28 +468,84 @@ def build_quality_markup(info, token, lang):
 
 # ✅ جديد: عرض الجودات لرابط معين قبل التحميل
 def send_quality_options(message, url, lang):
+    # ✅ السلوك المطلوب: تحميل مباشر للفيديو + الصوت بدون اختيار جودة
     chat_id = message.chat.id
-    status = bot.reply_to(message, t(lang, 'fetching_info'))
+    status = bot.reply_to(message, texts[lang]['processing'])  # "جاري التحميل... ⏳"
+    token2 = rand_token()
+    vid_file = None
+    aud_file = None
     try:
-        with yt_dlp.YoutubeDL(get_ydl_opts_info()) as ydl:
-            info = ydl.extract_info(url, download=False)
+        # ── تحميل الفيديو ──
+        vid_template = f'vid_{chat_id}_{token2}.%(ext)s'
+        with yt_dlp.YoutubeDL(get_ydl_opts_video(vid_template)) as ydl:
+            info = ydl.extract_info(url, download=True)
+            vid_file = ydl.prepare_filename(info)
 
-        token = rand_token()
-        _trim_caches()
-        DL_CACHE[token] = url
+        # بعد الدمج قد يصبح الامتداد mp4
+        if vid_file and not os.path.exists(vid_file):
+            base = os.path.splitext(vid_file)[0]
+            if os.path.exists(base + '.mp4'):
+                vid_file = base + '.mp4'
 
-        markup = build_quality_markup(info, token, lang)
-        title = info.get('title', '') or ''
-        cap = t(lang, 'choose_quality')
-        if title:
-            cap = f"🎬 {title}\n\n{cap}"
-        bot.edit_message_text(cap, chat_id, status.message_id, reply_markup=markup)
+        if vid_file and os.path.exists(vid_file):
+            size_mb = os.path.getsize(vid_file) / (1024 * 1024)
+            if size_mb > MAX_FILE_SIZE_MB:
+                bot.edit_message_text(texts[lang]['too_large'], chat_id, status.message_id)
+            else:
+                likes = info.get('like_count') or 0
+                views = info.get('view_count') or 0
+                duration = info.get('duration_string') or fmt_duration(info.get('duration'))
+
+                markup = InlineKeyboardMarkup()
+                markup.row(
+                    InlineKeyboardButton(f"❤️ {likes:,}", callback_data="n"),
+                    InlineKeyboardButton(f"👁 {views:,}", callback_data="n"),
+                    InlineKeyboardButton(f"⏱ {duration}", callback_data="n")
+                )
+                markup.row(InlineKeyboardButton(
+                    texts[lang]['share'],
+                    url=f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME[1:]}"
+                ))
+
+                with open(vid_file, 'rb') as f:
+                    bot.send_video(chat_id, f, caption=texts[lang]['success'],
+                                   reply_markup=markup, reply_to_message_id=message.message_id)
+
+        # ── تحميل الصوت بصيغة mp3 ──
+        aud_template = f'aud_{chat_id}_{token2}.%(ext)s'
+        with yt_dlp.YoutubeDL(get_ydl_opts_audio(aud_template)) as ydl:
+            info_a = ydl.extract_info(url, download=True)
+        aud_file = f'aud_{chat_id}_{token2}.mp3'
+        if os.path.exists(aud_file):
+            size_a = os.path.getsize(aud_file) / (1024 * 1024)
+            if size_a <= MAX_FILE_SIZE_MB:
+                with open(aud_file, 'rb') as f:
+                    bot.send_audio(
+                        chat_id, f,
+                        caption=texts[lang]['audio_cap'],
+                        title=info_a.get('title', 'Audio'),
+                        performer=BOT_USERNAME
+                    )
+
+        # حذف رسالة "جاري التحميل"
+        try:
+            bot.delete_message(chat_id, status.message_id)
+        except:
+            pass
+
     except Exception as e:
-        print(f"Info error for {chat_id}: {e}")
+        print(f"Download error for {chat_id}: {e}")
         try:
             bot.edit_message_text(texts[lang]['error'], chat_id, status.message_id)
         except:
             bot.send_message(chat_id, texts[lang]['error'])
+    finally:
+        for pattern in (f'vid_{chat_id}_{token2}.*', f'aud_{chat_id}_{token2}.*'):
+            for f in glob.glob(pattern):
+                try:
+                    os.remove(f)
+                except:
+                    pass
 
 
 # ✅ جديد: التحميل الفعلي بالجودة المختارة
