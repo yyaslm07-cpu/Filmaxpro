@@ -23,7 +23,7 @@ Thread(target=run_web, daemon=True).start()
 
 # --- كود بوت التيليجرام ---
 
-# تحديث أداة التحميل تلقائياً عند كل إقلاع
+# تحديث أداة التحميل تلقائياً عند كل إقلاع لمواكبة التحديثات
 print("🔄 جاري تحديث مكتبة yt-dlp تلقائياً...")
 os.system("pip install -U yt-dlp")
 
@@ -35,14 +35,6 @@ import secrets
 import string
 import glob
 import requests
-
-# 🔥 [الرقعة السحرية] 🔥 اختراق مكتبة yt-dlp داخلياً لتجبر على قبول نطاق threads.com الإقليمي وحل المشكلة للأبد
-try:
-    import yt_dlp.extractor.threads
-    yt_dlp.extractor.threads.ThreadsIE._VALID_URL = r'https?://(?:www\.)?threads\.(?:net|com)/(?:@(?P<username>[^/]+)/post/|t/)(?P<id>[^/?#]+)'
-    print("✅ تم رقع مكتبة yt-dlp بنجاح لدعم نطاقات ثريدز .com و .net معاً!")
-except Exception as e:
-    print(f"⚠️ فشل رقع مكتبة yt-dlp: {e}")
 
 # مهلات أطول لرفع الملفات الكبيرة
 apihelper.CONNECT_TIMEOUT = 30
@@ -91,31 +83,48 @@ def _detect_ffmpeg():
 _detect_ffmpeg()
 
 
+# ====== بناء وملائمة ملف الكوكيز تلقائياً للمنصات الإقليمية ======
 def _build_cookies_file():
-    if os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0:
-        print(f"✅ ملف الكوكيز موجود ({os.path.getsize(COOKIES_FILE)} بايت)")
-        return
+    global COOKIES_FILE
+    content = ""
+    
+    # 1) محاولة القراءة من السيكرت فايل أولاً
     render_secret = "/etc/secrets/cookies.txt"
     if os.path.exists(render_secret) and os.path.getsize(render_secret) > 0:
         try:
             with open(render_secret, "r", encoding="utf-8", errors="ignore") as src:
-                data = src.read()
-            with open(COOKIES_FILE, "w", encoding="utf-8") as dst:
-                dst.write(data)
-            print(f"✅ تم نسخ الكوكيز من Secret File ({os.path.getsize(COOKIES_FILE)} بايت)")
-            return
+                content = src.read()
         except Exception as e:
-            print(f"❌ تعذّر نسخ Secret File: {e}")
-    content = os.environ.get("COOKIES_CONTENT", "")
+            print(f"❌ تعذّر قراءة Secret File: {e}")
+    
+    # 2) إذا لم يوجد، نقرأ من متغير البيئة
     if not content.strip():
-        print("⚠️ لا يوجد كوكيز المدمجة")
+        content = os.environ.get("COOKIES_CONTENT", "")
+        
+    # 3) الاحتياط الأخير
+    if not content.strip() and os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0:
+        try:
+            with open(COOKIES_FILE, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+        except Exception:
+            pass
+
+    if not content.strip():
+        print("⚠️ لا يوجد كوكيز مدمجة للتشغيل")
         return
+
     try:
+        # [🔥 الحل الذري للخداع 🔥] تحويل محتوى نطاقات .com إلى .net داخل ملف الكوكيز لتقبله المكتبة رسمياً
+        if "threads.com" in content:
+            content = content.replace("threads.com", "threads.net")
+            print("🔄 تم تطويع كوكيز ثريدز وتحويل نطاقاتها داخلياً إلى threads.net!")
+            
         if "\\n" in content and "\n" not in content:
             content = content.replace("\\n", "\n")
+            
         with open(COOKIES_FILE, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"✅ تم إنشاء ملف الكوكيز ({os.path.getsize(COOKIES_FILE)} بايت)")
+        print(f"✅ تم إنشاء وتحديث ملف الكوكيز الموحد ({os.path.getsize(COOKIES_FILE)} بايت)")
     except Exception as e:
         print(f"❌ تعذّر كتابة ملف الكوكيز: {e}")
 
@@ -203,6 +212,7 @@ bot.set_my_commands([
     BotCommand("admin", "الادمن فقط")
 ])
 
+# قاموس اللغات السبع كامل ومحفوظ بالكامل
 texts = {
     'ar': {
         'welcome': f"⚖️┇أهلاً بك عزيزي، مع {BOT_USERNAME} يمكنك تحميل من عدة مواقع بصيغ متعددة والاستماع اليها في أي وقت،\n\n💠┇المنصات المدعومة:\n\n📥  يوتيوب         | 📥  انستكرام\n📥  فيسبوك       | 📥  تويتر/X\n📥  تيك توك       | 📥  سناب شات\n📥  ساوند كلاود  | 📥  بينترست\n📥  لايكي            | 📥  كواي\n📥  تيليجرام       | 📥  PMC Music\n📥  تمبلر            | 📥  ديلي موشن\n📥  فيميو           | 📥  ثريدز\n📥  فانيميت       | 📥  كاب كات\n\n- أرسل رابط المنشور للتحميل 📥\nولا تنسى قم بمشاركه البوت لاصدقائك  📥",
@@ -275,7 +285,7 @@ texts = {
     'hi': {
         'welcome': f"⚖️┇स्वागत है! {BOT_USERNAME} के साथ आप कई साइटों से डाउनलोड कर सकते हैं।\n\n- बस लिंक भेजें 📥",
         'usage': "💠┇उपयोग कैसे करें:\nवीडियो का लिंक भेजें।",
-        'force_sub': "क्षमा करें, आपको पहले हमारे चैनल की सदस्यता लेनी होगी 👇",
+        'force_sub': "ক্ষমা করুন, আপনাকে প্রথমে আমাদের চ্যানেলের সদস্যता নিতে হবে 👇",
         'sub_tg': "टेलीग्राम से जुड़ें 📢",
         'sub_yt': "यूट्यूब से जुड़ें 📺",
         'usage_btn': "💡 उपयोग कैसे करें।",
@@ -303,7 +313,7 @@ texts = {
         'success': f"সফলভাবে ডাউনলোড হয়েছে ✅\n{BOT_USERNAME}",
         'audio_cap': f"অডিও ট্র্যাক 🎵\n{BOT_USERNAME}",
         'share': "বট শেয়ার করুন 📤",
-        'error': "একটি ত্রুটি ঘটেছে। लिंकটি परीक्षा করুন।",
+        'error': "একটি ত্রুটি ঘটেছে। लिंकটি পরীক্ষা করুন।",
         'too_large': f"❌ ফাইলের আকার {MAX_FILE_SIZE_MB}MB এর বেশি।",
     },
     'ru': {
@@ -566,17 +576,24 @@ def download_audio(chat_id, url, lang):
     return ok
 
 
-# [🔥 إصلاح الخلل الخفي 🔥] الحفاظ على النطاق كما هو (.com أو .net) وإصلاح الـ @ المفقودة فقط
+# [🔥 الحل السحري لتنظيف الروابط بالكامل للأداة الرسمية 🔥]
 def clean_url(url):
     url = url.strip()
     
     if "threads.com" in url or "threads.net" in url:
+        # تحويل الرابط إجبارياً إلى النطاق الأصلي المدعوم بمكتبة yt-dlp
+        url = url.replace("threads.com", "threads.net")
+        
         if "?" in url:
             url = url.split("?")[0]
             
-        # إصلاح الـ @ المفقودة تلقائياً بناءً على النطاق الفعلي للشخص والكوكيز الخاصة به
-        if "/post/" in url and "/@" not in url:
-            url = url.replace(".com/", ".com/@").replace(".net/", ".net/@")
+        # زرع علامة الـ @ واسم المستخدم بشكل يتعرف عليه المستخرج الأصلي دون أخطاء
+        # مثال: تحويل threads.net/3experiencs/post/ إلى threads.net/@3experiencs/post/
+        if "/post/" in url and "net/@" not in url:
+            if "www.threads.net/" in url:
+                url = url.replace("www.threads.net/", "www.threads.net/@")
+            elif "threads.net/" in url:
+                url = url.replace("threads.net/", "threads.net/@")
     else:
         if "?" in url:
             url = url.split("?")[0]
@@ -741,3 +758,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
