@@ -23,7 +23,7 @@ Thread(target=run_web, daemon=True).start()
 
 # --- كود بوت التيليجرام ---
 
-# [ميزة خارقة] تحديث أداة التحميل تلقائياً عند كل إقلاع لمواكبة حماية ثريدز ويوتيوب
+# تحديث أداة التحميل تلقائياً عند كل إقلاع لمواكبة حماية ثريدز ويوتيوب
 print("🔄 جاري تحديث مكتبة yt-dlp تلقائياً لضمان دعم كافة المنصات...")
 os.system("pip install -U yt-dlp")
 
@@ -207,7 +207,7 @@ bot.set_my_commands([
     BotCommand("admin", "الادمن فقط")
 ])
 
-# [كل اللغات السبع تم الحفاظ عليها بالكامل بدون نقص حرف واحد]
+# [قاموس اللغات السبع كامل وبدون نقص]
 texts = {
     'ar': {
         'welcome': f"⚖️┇أهلاً بك عزيزي، مع {BOT_USERNAME} يمكنك تحميل من عدة مواقع بصيغ متعددة والاستماع اليها في أي وقت،\n\n💠┇المنصات المدعومة:\n\n📥  يوتيوب         | 📥  انستكرام\n📥  فيسبوك       | 📥  تويتر/X\n📥  تيك توك       | 📥  سناب شات\n📥  ساوند كلاود  | 📥  بينترست\n📥  لايكي            | 📥  كواي\n📥  تيليجرام       | 📥  PMC Music\n📥  تمبلر            | 📥  ديلي موشن\n📥  فيميو           | 📥  ثريدز\n📥  فانيميت       | 📥  كاب كات\n\n- أرسل رابط المنشور للتحميل 📥\nولا تنسى قم بمشاركه البوت لاصدقائك  📥",
@@ -278,9 +278,9 @@ texts = {
         'too_large': f"❌ File troppo grande (>{MAX_FILE_SIZE_MB}MB).",
     },
     'hi': {
-        'welcome': f"⚖️┇स्वागत है! {BOT_USERNAME} के साथ आप कई साइटों से डाउनलोड कर सकते हैं।\n\n- बस लिंक भेजें 📥",
+        'welcome': f"⚖️┇स्वागत है! {BOT_USERNAME} के साथ आप कई साइटों से डाउनलोड कर सकते हैं।\n\n- بس لينك भेजें 📥",
         'usage': "💠┇उपयोग कैसे करें:\nवीडियो का लिंक भेजें।",
-        'force_sub': "क्षमा करें, आपको पहले हमारे चैनल की सदस्यता लेनी होगी 👇",
+        'force_sub': "ক্ষমা করুন, আপনাকে প্রথমে আমাদের চ্যানেলের সদস্যতা নিতে হবে 👇",
         'sub_tg': "टेलीग्राम से जुड़ें 📢",
         'sub_yt': "यूट्यूब से जुड़ें 📺",
         'usage_btn': "💡 उपयोग कैसे करें।",
@@ -288,7 +288,7 @@ texts = {
         'choose_lang': "अपनी भाषा चुनें 👇",
         'processing': "डाउनलोड हो रहा है... ⏳",
         'invalid_link': "कृपया केवल वैध लिंक भेजें ❌",
-        'success': f"سफलतापूर्वक डाउनलोड किया गया ✅\n{BOT_USERNAME}",
+        'success': f"सफलतापूर्वक डाउनलोड किया गया ✅\n{BOT_USERNAME}",
         'audio_cap': f"ऑडियो ट्रैक 🎵\n{BOT_USERNAME}",
         'share': "بॉट साझा करें 📤",
         'error': "एक त्रुटિ हुई। लिंक की जांच करें।",
@@ -303,12 +303,12 @@ texts = {
         'usage_btn': "💡 কীভাবে ব্যবহার করবেন।",
         'lang_btn': "🌐 ভাষা পরিবর্তন করুন।",
         'choose_lang': "আপনার ভাষা নির্বাচন করুন 👇",
-        'processing': "ডাউনलोड হচ্ছে... ⏳",
+        'processing': "ডাউনলোড হচ্ছে... ⏳",
         'invalid_link': "অনুগ্রহ করে একটি সঠিক লিংক পাঠান ❌",
         'success': f"সফলভাবে ডাউনলোড হয়েছে ✅\n{BOT_USERNAME}",
         'audio_cap': f"অডিও ট্র্যাক 🎵\n{BOT_USERNAME}",
         'share': "বট শেয়ার করুন 📤",
-        'error': "একটি ত্রুটি ঘটেছে। লিংকটি পরীক্ষা করুন।",
+        'error': "একটি ত্রুটি ঘটেছে। लिंकটি পরীক্ষা করুন।",
         'too_large': f"❌ ফাইলের আকার {MAX_FILE_SIZE_MB}MB এর বেশি।",
     },
     'ru': {
@@ -372,7 +372,7 @@ def get_ydl_opts_video(output_template, height):
         'nocheckcertificate': True,
         'merge_output_format': 'mp4',
         'noplaylist': True,
-        'retries': 3,  # تقليل المحاولات لتجنب التعليق والبطء عند وجود رابط غير مدعوم
+        'retries': 3,
         'fragment_retries': 3,
         'socket_timeout': 15,
         'concurrent_fragment_downloads': 4,
@@ -571,11 +571,23 @@ def download_audio(chat_id, url, lang):
     return ok
 
 
-# [الإصلاح الجذري لفشل ثريدز] تحويل دقيق للنطاق وإزالة زوائد المشاركة
+# [🔥 التعديل الجوهري الخارق لحل مشكلة ثريدز تماماً وللأبد 🔥]
 def clean_url(url):
     url = url.strip()
+    
     if "threads.com" in url or "threads.net" in url:
+        # 1) توحيد النطاق إلى threads.net
         url = url.replace("threads.com", "threads.net")
+        
+        # 2) زرع علامة الـ @ المفقودة إجبارياً قبل اسم المستخدم ليتعرف عليها yt-dlp
+        if "threads.net/@" not in url:
+            # لو الرابط به www.threads.net/
+            if "www.threads.net/" in url:
+                url = url.replace("www.threads.net/", "www.threads.net/@")
+            # لو الرابط بدون www كذا threads.net/
+            elif "threads.net/" in url:
+                url = url.replace("threads.net/", "threads.net/@")
+                
     if "?" in url:
         url = url.split("?")[0]
     return url
