@@ -507,16 +507,23 @@ def _find_output(prefix):
 
 # تحميل الفيديو مع خفض الجودة تلقائياً حتى يدخل تحت حد تيليجرام
 def download_video(chat_id, url, lang, status_msg_id=None, reply_to=None):
+    print(f"[VIDEO v3] بدء تحميل: {url}")
     last_info = None
     got_file_but_too_big = False
     had_error = False
 
-    for height in DOWNLOAD_HEIGHTS:
+    # None = محاولة أخيرة بدون تحديد صيغة (yt-dlp يختار تلقائياً) لضمان النجاح
+    attempts = list(DOWNLOAD_HEIGHTS) + [None]
+    for height in attempts:
         token2 = rand_token()
         prefix = f'vid_{chat_id}_{token2}.'
         template = f'vid_{chat_id}_{token2}.%(ext)s'
         try:
-            with yt_dlp.YoutubeDL(get_ydl_opts_video(template, height)) as ydl:
+            opts = get_ydl_opts_video(template, height)
+            if height is None:
+                # إزالة قيد الصيغة تماماً — آخر فرصة
+                opts.pop('format', None)
+            with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 last_info = info
 
