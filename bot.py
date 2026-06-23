@@ -1,4 +1,4 @@
-Import os
+import os
 from flask import Flask
 from threading import Thread
 from concurrent.futures import ThreadPoolExecutor
@@ -397,6 +397,13 @@ def get_ydl_opts_video(output_template, height):
         'fragment_retries': 5,
         'socket_timeout': 30,
         'concurrent_fragment_downloads': 4,
+        # ====== الحل لمشكلة "Requested format is not available" ======
+        # تجربة عملاء متعددين (أندرويد/iOS/ويب) لتجاوز قيود SABR على خوادم البيانات
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios', 'web'],
+            }
+        },
         'http_headers': {
             'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                            'AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -417,6 +424,12 @@ def get_ydl_opts_audio(output_template):
         'retries': 5,
         'fragment_retries': 5,
         'socket_timeout': 30,
+        # نفس الحل للصوت
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios', 'web'],
+            }
+        },
         'http_headers': {
             'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                            'AppleWebKit/537.36 (KHTML, like Gecko) '
