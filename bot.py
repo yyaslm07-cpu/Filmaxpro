@@ -23,8 +23,8 @@ Thread(target=run_web, daemon=True).start()
 
 # --- كود بوت التيليجرام ---
 
-# تحديث أداة التحميل تلقائياً عند كل إقلاع لمواكبة حماية ثريدز ويوتيوب
-print("🔄 جاري تحديث مكتبة yt-dlp تلقائياً لضمان دعم كافة المنصات...")
+# تحديث أداة التحميل تلقائياً عند كل إقلاع
+print("🔄 جاري تحديث مكتبة yt-dlp تلقائياً...")
 os.system("pip install -U yt-dlp")
 
 import telebot
@@ -36,7 +36,15 @@ import string
 import glob
 import requests
 
-# مهلات أطول لرفع الملفات الكبيرة (مهم للملفات قرب 50MB على Render)
+# 🔥 [الرقعة السحرية] 🔥 اختراق مكتبة yt-dlp داخلياً لتجبر على قبول نطاق threads.com الإقليمي وحل المشكلة للأبد
+try:
+    import yt_dlp.extractor.threads
+    yt_dlp.extractor.threads.ThreadsIE._VALID_URL = r'https?://(?:www\.)?threads\.(?:net|com)/(?:@(?P<username>[^/]+)/post/|t/)(?P<id>[^/?#]+)'
+    print("✅ تم رقع مكتبة yt-dlp بنجاح لدعم نطاقات ثريدز .com و .net معاً!")
+except Exception as e:
+    print(f"⚠️ فشل رقع مكتبة yt-dlp: {e}")
+
+# مهلات أطول لرفع الملفات الكبيرة
 apihelper.CONNECT_TIMEOUT = 30
 apihelper.READ_TIMEOUT = 300
 apihelper.RETRY_ON_ERROR = True
@@ -54,16 +62,11 @@ BOT_USERNAME = "@VidGrabber2026_bot"
 CHANNEL_USERNAME = "@filmaxpro"
 YOUTUBE_LINK = "https://youtube.com/@mosleh_2003?si=iRehojptx4LlM--6"
 
-# الحد الأقصى لحجم الملف (50MB = حد تيليجرام Bot API)
+# الحد الأقصى لحجم الملف
 MAX_FILE_SIZE_MB = 50
-
-# جودات يتم تجربتها بالترتيب حتى يدخل الملف تحت الحد (مع ضمان وجود الصوت)
 DOWNLOAD_HEIGHTS = [720, 480, 360, 240]
-
-# ملف الكوكيز
 COOKIES_FILE = "cookies.txt"
 
-# ====== تحديد مسار ffmpeg تلقائياً ======
 FFMPEG_LOCATION = None
 
 
@@ -88,7 +91,6 @@ def _detect_ffmpeg():
 _detect_ffmpeg()
 
 
-# ====== بناء ملف الكوكيز من متغير بيئة أو من الملفات السرية ======
 def _build_cookies_file():
     if os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0:
         print(f"✅ ملف الكوكيز موجود ({os.path.getsize(COOKIES_FILE)} بايت)")
@@ -120,9 +122,7 @@ def _build_cookies_file():
 
 _build_cookies_file()
 
-# منفّذ خيوط للتحميلات حتى لا يتجمّد البوت أثناء التحميل
 download_executor = ThreadPoolExecutor(max_workers=4)
-
 user_langs = {}
 users_db = set()
 
@@ -145,7 +145,6 @@ def supabase_ready():
 
 
 def db_add_user(user_id):
-    """يحفظ المستخدم في Supabase + في الذاكرة."""
     users_db.add(user_id)
     if not supabase_ready():
         return
@@ -192,22 +191,18 @@ def db_count_users():
     return len(users_db)
 
 
-# تحميل المستخدمين عند الإقلاع
 if supabase_ready():
     try:
         db_get_all_users()
         print(f"✅ تم تحميل {len(users_db)} مستخدم من Supabase")
     except Exception as e:
         print(f"تعذّر تحميل المستخدمين عند الإقلاع: {e}")
-else:
-    print("⚠️ Supabase غير مفعّل — الحفظ مؤقت فقط")
 
 bot.set_my_commands([
     BotCommand("start", "بدء الان"),
     BotCommand("admin", "الادمن فقط")
 ])
 
-# [قاموس اللغات السبع كامل وبدون نقص]
 texts = {
     'ar': {
         'welcome': f"⚖️┇أهلاً بك عزيزي، مع {BOT_USERNAME} يمكنك تحميل من عدة مواقع بصيغ متعددة والاستماع اليها في أي وقت،\n\n💠┇المنصات المدعومة:\n\n📥  يوتيوب         | 📥  انستكرام\n📥  فيسبوك       | 📥  تويتر/X\n📥  تيك توك       | 📥  سناب شات\n📥  ساوند كلاود  | 📥  بينترست\n📥  لايكي            | 📥  كواي\n📥  تيليجرام       | 📥  PMC Music\n📥  تمبلر            | 📥  ديلي موشن\n📥  فيميو           | 📥  ثريدز\n📥  فانيميت       | 📥  كاب كات\n\n- أرسل رابط المنشور للتحميل 📥\nولا تنسى قم بمشاركه البوت لاصدقائك  📥",
@@ -278,9 +273,9 @@ texts = {
         'too_large': f"❌ File troppo grande (>{MAX_FILE_SIZE_MB}MB).",
     },
     'hi': {
-        'welcome': f"⚖️┇स्वागत है! {BOT_USERNAME} के साथ आप कई साइटों से डाउनलोड कर सकते हैं।\n\n- بس لينك भेजें 📥",
+        'welcome': f"⚖️┇स्वागत है! {BOT_USERNAME} के साथ आप कई साइटों से डाउनलोड कर सकते हैं।\n\n- बस लिंक भेजें 📥",
         'usage': "💠┇उपयोग कैसे करें:\nवीडियो का लिंक भेजें।",
-        'force_sub': "ক্ষমা করুন, আপনাকে প্রথমে আমাদের চ্যানেলের সদস্যতা নিতে হবে 👇",
+        'force_sub': "क्षमा करें, आपको पहले हमारे चैनल की सदस्यता लेनी होगी 👇",
         'sub_tg': "टेलीग्राम से जुड़ें 📢",
         'sub_yt': "यूट्यूब से जुड़ें 📺",
         'usage_btn': "💡 उपयोग कैसे करें।",
@@ -288,9 +283,9 @@ texts = {
         'choose_lang': "अपनी भाषा चुनें 👇",
         'processing': "डाउनलोड हो रहा है... ⏳",
         'invalid_link': "कृपया केवल वैध लिंक भेजें ❌",
-        'success': f"सफलतापूर्वक डाउनलोड किया गया ✅\n{BOT_USERNAME}",
+        'success': f"سफलतापूर्वक डाउनलोड किया गया ✅\n{BOT_USERNAME}",
         'audio_cap': f"ऑडियो ट्रैक 🎵\n{BOT_USERNAME}",
-        'share': "بॉट साझा करें 📤",
+        'share': "बॉट साझा करें 📤",
         'error': "एक त्रुटિ हुई। लिंक की जांच करें।",
         'too_large': f"❌ फ़ाइल {MAX_FILE_SIZE_MB}MB से बड़ी है।",
     },
@@ -308,7 +303,7 @@ texts = {
         'success': f"সফলভাবে ডাউনলোড হয়েছে ✅\n{BOT_USERNAME}",
         'audio_cap': f"অডিও ট্র্যাক 🎵\n{BOT_USERNAME}",
         'share': "বট শেয়ার করুন 📤",
-        'error': "একটি ত্রুটি ঘটেছে। लिंकটি পরীক্ষা করুন।",
+        'error': "একটি ত্রুটি ঘটেছে। लिंकটি परीक्षा করুন।",
         'too_large': f"❌ ফাইলের আকার {MAX_FILE_SIZE_MB}MB এর বেশি।",
     },
     'ru': {
@@ -571,25 +566,21 @@ def download_audio(chat_id, url, lang):
     return ok
 
 
-# [🔥 التعديل الجوهري الخارق لحل مشكلة ثريدز تماماً وللأبد 🔥]
+# [🔥 إصلاح الخلل الخفي 🔥] الحفاظ على النطاق كما هو (.com أو .net) وإصلاح الـ @ المفقودة فقط
 def clean_url(url):
     url = url.strip()
     
     if "threads.com" in url or "threads.net" in url:
-        # 1) توحيد النطاق إلى threads.net
-        url = url.replace("threads.com", "threads.net")
-        
-        # 2) زرع علامة الـ @ المفقودة إجبارياً قبل اسم المستخدم ليتعرف عليها yt-dlp
-        if "threads.net/@" not in url:
-            # لو الرابط به www.threads.net/
-            if "www.threads.net/" in url:
-                url = url.replace("www.threads.net/", "www.threads.net/@")
-            # لو الرابط بدون www كذا threads.net/
-            elif "threads.net/" in url:
-                url = url.replace("threads.net/", "threads.net/@")
-                
-    if "?" in url:
-        url = url.split("?")[0]
+        if "?" in url:
+            url = url.split("?")[0]
+            
+        # إصلاح الـ @ المفقودة تلقائياً بناءً على النطاق الفعلي للشخص والكوكيز الخاصة به
+        if "/post/" in url and "/@" not in url:
+            url = url.replace(".com/", ".com/@").replace(".net/", ".net/@")
+    else:
+        if "?" in url:
+            url = url.split("?")[0]
+            
     return url
 
 
@@ -750,4 +741,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
