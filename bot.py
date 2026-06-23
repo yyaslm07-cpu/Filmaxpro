@@ -370,17 +370,17 @@ def _common_opts(opts):
 
 def _video_format(height):
     """
-    صيغة تضمن دائماً وجود الصوت:
+    صيغة مرنة تضمن وجود الصوت وتتجنب 'Requested format is not available':
     - تحاول دمج أفضل فيديو + أفضل صوت (يحتاج ffmpeg)
-    - وإلا تأخذ ملفاً مدمجاً جاهزاً (فيه صوت أصلاً)
-    لا نستخدم أبداً صيغة (فيديو فقط) كحل احتياطي حتى لا يخرج المقطع صامتاً.
+    - ثم ملف مدمج جاهز
+    - وأخيراً أي فيديو+أي صوت بدون قيد الطول (يضمن النجاح دائماً)
     """
     return (
-        f'bv*[height<={height}][ext=mp4]+ba[ext=m4a]/'
         f'bv*[height<={height}]+ba/'
-        f'b[height<={height}][ext=mp4]/'
         f'b[height<={height}]/'
-        f'b'
+        f'bv*+ba/'
+        f'b/'
+        f'best'
     )
 
 
@@ -771,16 +771,25 @@ def process_url(message):
 def main():
     print("✅ البوت يعمل الآن...")
     try:
+        # حذف أي webhook قديم وتجاهل التحديثات المعلّقة لتفادي تعارض 409
         bot.remove_webhook()
     except Exception:
         pass
+    # مهلة بسيطة تسمح لأي نسخة سابقة بالتوقف قبل بدء الاستطلاع
+    time.sleep(3)
     # حلقة إعادة تشغيل تلقائية إذا انقطع الـ polling
     while True:
         try:
             bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
         except Exception as e:
-            print(f"Polling crashed, restarting in 5s: {e}")
-            time.sleep(5)
+            msg = str(e)
+            if "409" in msg or "Conflict" in msg:
+                # نسخة أخرى تعمل بنفس التوكن — ننتظر أطول
+                print("⚠️ تعارض 409: نسخة أخرى من البوت تعمل. انتظار 15 ثانية...")
+                time.sleep(15)
+            else:
+                print(f"Polling crashed, restarting in 5s: {e}")
+                time.sleep(5)
 
 
 if __name__ == "__main__":
