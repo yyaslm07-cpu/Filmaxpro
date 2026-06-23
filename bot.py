@@ -87,6 +87,44 @@ def _detect_ffmpeg():
 
 _detect_ffmpeg()
 
+
+# ====== بناء ملف الكوكيز من متغير بيئة (الحل ليوتيوب وثريدز على Render) ======
+# Render يمسح الملفات بين عمليات النشر، لذلك نخزّن محتوى cookies.txt في متغير
+# بيئة اسمه COOKIES_CONTENT، والكود يكتبه إلى ملف عند كل إقلاع.
+def _build_cookies_file():
+    # 1) إذا كان الملف موجوداً مسبقاً (Render Secret File في مجلد التشغيل) نستخدمه
+    if os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0:
+        print(f"✅ ملف الكوكيز موجود ({os.path.getsize(COOKIES_FILE)} بايت)")
+        return
+    # 2) Render Secret Files تُحفظ عادةً في /etc/secrets/
+    render_secret = "/etc/secrets/cookies.txt"
+    if os.path.exists(render_secret) and os.path.getsize(render_secret) > 0:
+        try:
+            with open(render_secret, "r", encoding="utf-8", errors="ignore") as src:
+                data = src.read()
+            with open(COOKIES_FILE, "w", encoding="utf-8") as dst:
+                dst.write(data)
+            print(f"✅ تم نسخ الكوكيز من Secret File ({os.path.getsize(COOKIES_FILE)} بايت)")
+            return
+        except Exception as e:
+            print(f"❌ تعذّر نسخ Secret File: {e}")
+    # 3) أو من متغير بيئة COOKIES_CONTENT
+    content = os.environ.get("COOKIES_CONTENT", "")
+    if not content.strip():
+        print("⚠️ لا يوجد كوكيز — يوتيوب/ثريدز قد يفشلان (طبيعي بدون كوكيز)")
+        return
+    try:
+        if "\\n" in content and "\n" not in content:
+            content = content.replace("\\n", "\n")
+        with open(COOKIES_FILE, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"✅ تم إنشاء ملف الكوكيز ({os.path.getsize(COOKIES_FILE)} بايت)")
+    except Exception as e:
+        print(f"❌ تعذّر كتابة ملف الكوكيز: {e}")
+
+
+_build_cookies_file()
+
 # منفّذ خيوط للتحميلات حتى لا يتجمّد البوت أثناء التحميل
 download_executor = ThreadPoolExecutor(max_workers=4)
 
@@ -573,8 +611,20 @@ def download_audio(chat_id, url, lang, status_msg_id=None):
 
 
 # التحميل بالرابط: فيديو ثم صوت تلقائياً
+def clean_url(url):
+    """تنظيف الروابط قبل تمريرها (خاصة ثريدز/إنستغرام)."""
+    url = url.strip()
+    # ثريدز: تحويل threads.com إلى threads.net المدعوم، وإزالة لاحقات المشاركة
+    if "threads.com" in url or "threads.net" in url:
+        url = url.replace("threads.com", "threads.net")
+        # إزالة كل ما بعد ?  (مثل xmt= و slof=) لأنها تكسر المستخرج
+        url = url.split("?")[0]
+    return url
+
+
 def do_download_link(message, url, lang):
     chat_id = message.chat.id
+    url = clean_url(url)
     try:
         status = bot.reply_to(message, texts[lang]['processing'])
         status_id = status.message_id
