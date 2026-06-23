@@ -1,24 +1,30 @@
 import os
 from flask import Flask
 from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
+import time
 
 # تشغيل خادم ويب صغير لإرضاء Render
 app = Flask(__name__)
+
 
 @app.route('/')
 def home():
     return "البوت يعمل بكامل طاقته!"
 
+
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
+
 # تشغيل الويب في خلفية منفصلة
-Thread(target=run_web).start()
+Thread(target=run_web, daemon=True).start()
 
 # --- كود بوت التيليجرام ---
 
 import telebot
+import telebot.apihelper as apihelper
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 import yt_dlp
 import secrets
@@ -26,8 +32,16 @@ import string
 import glob
 import requests
 
+# مهلات أطول لرفع الملفات الكبيرة (مهم للملفات قرب 50MB على Render)
+apihelper.CONNECT_TIMEOUT = 30
+apihelper.READ_TIMEOUT = 300
+apihelper.RETRY_ON_ERROR = True
+
 # التوكن من متغير بيئة
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "ضع_توكنك_هنا")
+if BOT_TOKEN == "ضع_توكنك_هنا":
+    print("⚠️ تحذير: لم يتم ضبط BOT_TOKEN في متغيرات البيئة!")
+
 bot = telebot.TeleBot(BOT_TOKEN)
 
 BOT_USERNAME = "@VidGrabber2026_bot"
@@ -35,11 +49,46 @@ CHANNEL_USERNAME = "@filmaxpro"
 YOUTUBE_LINK = "https://youtube.com/@mosleh_2003?si=iRehojptx4LlM--6"
 ADMIN_ID = 1983356771
 
-# الحد الأقصى لحجم الملف (50MB = حد تيليجرام)
+# الحد الأقصى لحجم الملف (50MB = حد تيليجرام Bot API)
 MAX_FILE_SIZE_MB = 50
+
+# جودات يتم تجربتها بالترتيب حتى يدخل الملف تحت الحد (مع ضمان وجود الصوت)
+DOWNLOAD_HEIGHTS = [720, 480, 360, 240]
 
 # ملف الكوكيز (اختياري) — يُضاف فقط إذا كان موجوداً
 COOKIES_FILE = "cookies.txt"
+
+# ====== تحديد مسار ffmpeg تلقائياً (الحل الجذري لمشكلة "بدون صوت") ======
+# الأولوية: ffmpeg المثبّت على النظام، ثم نسخة imageio-ffmpeg الجاهزة.
+FFMPEG_LOCATION = None
+
+
+def _detect_ffmpeg():
+    global FFMPEG_LOCATION
+    # 1) ffmpeg مثبّت على النظام (PATH)؟
+    from shutil import which
+    sys_ffmpeg = which("ffmpeg")
+    if sys_ffmpeg:
+        FFMPEG_LOCATION = os.path.dirname(sys_ffmpeg)
+        print(f"✅ ffmpeg موجود على النظام: {sys_ffmpeg}")
+        return
+    # 2) نسخة imageio-ffmpeg الجاهزة (تُثبّت عبر pip بدون Docker)
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        FFMPEG_LOCATION = os.path.dirname(exe)
+        print(f"✅ ffmpeg عبر imageio-ffmpeg: {exe}")
+        return
+    except Exception as e:
+        print(f"⚠️ imageio-ffmpeg غير متاح: {e}")
+    print("❌ تحذير خطير: لم يُعثر على ffmpeg — ستظهر مقاطع بدون صوت! "
+          "ثبّت imageio-ffmpeg أو ffmpeg على النظام.")
+
+
+_detect_ffmpeg()
+
+# منفّذ خيوط للتحميلات حتى لا يتجمّد البوت أثناء التحميل
+download_executor = ThreadPoolExecutor(max_workers=4)
 
 user_langs = {}
 users_db = set()
@@ -141,8 +190,8 @@ texts = {
         'success': f"تم تحميل المقطع بنجاح ✅\n{BOT_USERNAME}",
         'audio_cap': f"المقطع الصوتي 🎵\n{BOT_USERNAME}",
         'share': "مشاركة البوت 📤",
-        'error': "حدث خطأ، تأكد من صحة الرابط أو أن الحساب ليس خاصاً.",
-        'too_large': f"❌ حجم الملف أكبر من {MAX_FILE_SIZE_MB}MB، لا يمكن إرساله عبر تيليجرام.",
+        'error': "حدث خطأ، تأكد من صحة الرابط أو أن الحساب ليس خاصاً ❌",
+        'too_large': f"❌ المقطع أكبر من {MAX_FILE_SIZE_MB}MB حتى بعد خفض الجودة، ولا يمكن إرساله عبر تيليجرام.",
     },
     'en': {
         'welcome': f"⚖️┇Welcome! With {BOT_USERNAME} you can download from multiple platforms easily,\n\n- Send a link to download 📥",
@@ -159,7 +208,7 @@ texts = {
         'audio_cap': f"Audio Track 🎵\n{BOT_USERNAME}",
         'share': "Share Bot 📤",
         'error': "An error occurred. Make sure the link is public.",
-        'too_large': f"❌ File size exceeds {MAX_FILE_SIZE_MB}MB, cannot send via Telegram.",
+        'too_large': f"❌ File size exceeds {MAX_FILE_SIZE_MB}MB even after lowering quality, cannot send via Telegram.",
     },
     'fr': {
         'welcome': f"⚖️┇Bienvenue! Avec {BOT_USERNAME} vous pouvez télécharger depuis plusieurs sites,\n\n- Envoyez simplement le lien 📥",
@@ -272,38 +321,68 @@ def fmt_duration(seconds):
     return f"{m}:{s:02d}"
 
 
-# يضيف الكوكيز فقط إذا الملف موجود (يمنع الخطأ إذا لم يُرفع)
-def _add_cookies(opts):
+# يضيف الكوكيز + مسار ffmpeg تلقائياً
+def _common_opts(opts):
     if os.path.exists(COOKIES_FILE):
         opts['cookiefile'] = COOKIES_FILE
+    if FFMPEG_LOCATION:
+        opts['ffmpeg_location'] = FFMPEG_LOCATION
     return opts
 
 
-def get_ydl_opts_video(output_template):
-    return _add_cookies({
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+def _video_format(height):
+    """
+    صيغة تضمن دائماً وجود الصوت:
+    - تحاول دمج أفضل فيديو + أفضل صوت (يحتاج ffmpeg)
+    - وإلا تأخذ ملفاً مدمجاً جاهزاً (فيه صوت أصلاً)
+    لا نستخدم أبداً صيغة (فيديو فقط) كحل احتياطي حتى لا يخرج المقطع صامتاً.
+    """
+    return (
+        f'bv*[height<={height}][ext=mp4]+ba[ext=m4a]/'
+        f'bv*[height<={height}]+ba/'
+        f'b[height<={height}][ext=mp4]/'
+        f'b[height<={height}]/'
+        f'b'
+    )
+
+
+def get_ydl_opts_video(output_template, height):
+    return _common_opts({
+        'format': _video_format(height),
         'outtmpl': output_template,
         'quiet': True,
+        'no_warnings': True,
         'nocheckcertificate': True,
         'merge_output_format': 'mp4',
+        'noplaylist': True,
+        'retries': 5,
+        'fragment_retries': 5,
+        'socket_timeout': 30,
+        'concurrent_fragment_downloads': 4,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                           'AppleWebKit/537.36 (KHTML, like Gecko) '
+                           'Chrome/124.0.0.0 Safari/537.36'),
             'Accept-Language': 'en-US,en;q=0.9',
         },
-        'noplaylist': True,
-        'max_filesize': MAX_FILE_SIZE_MB * 1024 * 1024,
     })
 
 
 def get_ydl_opts_audio(output_template):
-    return _add_cookies({
+    return _common_opts({
         'format': 'bestaudio/best',
         'outtmpl': output_template,
         'quiet': True,
+        'no_warnings': True,
         'nocheckcertificate': True,
         'noplaylist': True,
+        'retries': 5,
+        'fragment_retries': 5,
+        'socket_timeout': 30,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                           'AppleWebKit/537.36 (KHTML, like Gecko) '
+                           'Chrome/124.0.0.0 Safari/537.36'),
         },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
@@ -317,7 +396,8 @@ def check_sub(user_id):
     try:
         member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
         return member.status in ['member', 'administrator', 'creator']
-    except:
+    except Exception:
+        # fail-open: لو فشل الفحص (مثلاً البوت ليس أدمن في القناة) نسمح بالمرور
         return True
 
 
@@ -357,38 +437,69 @@ def _report(chat_id, status_msg_id, text):
             bot.edit_message_text(text, chat_id, status_msg_id)
         else:
             bot.send_message(chat_id, text)
-    except:
+    except Exception:
         try:
             bot.send_message(chat_id, text)
-        except:
+        except Exception:
             pass
 
 
-# تحميل الفيديو
+def _cleanup(prefix):
+    """حذف كل الملفات المؤقتة لهذا التحميل (بما فيها .part و .f140 ... إلخ)."""
+    for f in glob.glob(f'{prefix}*'):
+        try:
+            os.remove(f)
+        except Exception:
+            pass
+
+
+def _find_output(prefix):
+    """يعثر على الملف النهائي متجاهلاً الملفات المؤقتة."""
+    cands = [c for c in glob.glob(f'{prefix}*')
+             if not c.endswith(('.part', '.ytdl', '.temp'))]
+    if not cands:
+        return None
+    # نفضّل mp4 إن وجد
+    mp4 = [c for c in cands if c.lower().endswith('.mp4')]
+    pick = (mp4 or cands)
+    # أكبر ملف هو الفيديو النهائي عادةً
+    pick.sort(key=lambda p: os.path.getsize(p) if os.path.exists(p) else 0, reverse=True)
+    return pick[0]
+
+
+# تحميل الفيديو مع خفض الجودة تلقائياً حتى يدخل تحت حد تيليجرام
 def download_video(chat_id, url, lang, status_msg_id=None, reply_to=None):
-    token2 = rand_token()
-    out_file = None
-    ok = False
-    try:
+    last_info = None
+    got_file_but_too_big = False
+    had_error = False
+
+    for height in DOWNLOAD_HEIGHTS:
+        token2 = rand_token()
+        prefix = f'vid_{chat_id}_{token2}.'
         template = f'vid_{chat_id}_{token2}.%(ext)s'
-        with yt_dlp.YoutubeDL(get_ydl_opts_video(template)) as ydl:
-            info = ydl.extract_info(url, download=True)
-            out_file = ydl.prepare_filename(info)
+        try:
+            with yt_dlp.YoutubeDL(get_ydl_opts_video(template, height)) as ydl:
+                info = ydl.extract_info(url, download=True)
+                last_info = info
 
-        if out_file and not os.path.exists(out_file):
-            base = os.path.splitext(out_file)[0]
-            if os.path.exists(base + '.mp4'):
-                out_file = base + '.mp4'
+            out_file = _find_output(prefix)
+            if not out_file or not os.path.exists(out_file):
+                had_error = True
+                _cleanup(prefix)
+                continue
 
-        if out_file and os.path.exists(out_file):
             size_mb = os.path.getsize(out_file) / (1024 * 1024)
             if size_mb > MAX_FILE_SIZE_MB:
-                _report(chat_id, status_msg_id, texts[lang]['too_large'])
-                return False
+                got_file_but_too_big = True
+                _cleanup(prefix)
+                continue  # جرّب جودة أقل
 
-            likes = info.get('like_count') or 0
-            views = info.get('view_count') or 0
-            duration = info.get('duration_string') or fmt_duration(info.get('duration'))
+            # نجح وحجمه مناسب → أرسله
+            likes = (last_info.get('like_count') or 0) if last_info else 0
+            views = (last_info.get('view_count') or 0) if last_info else 0
+            duration = ((last_info.get('duration_string')
+                         or fmt_duration(last_info.get('duration')))
+                        if last_info else "0:00")
 
             markup = InlineKeyboardMarkup()
             markup.row(
@@ -403,29 +514,44 @@ def download_video(chat_id, url, lang, status_msg_id=None, reply_to=None):
 
             with open(out_file, 'rb') as f:
                 bot.send_video(chat_id, f, caption=texts[lang]['success'],
-                               reply_markup=markup, reply_to_message_id=reply_to)
-            ok = True
-    except Exception as e:
-        print(f"Video download error for {chat_id}: {e}")
+                               reply_markup=markup, reply_to_message_id=reply_to,
+                               timeout=300, supports_streaming=True)
+            _cleanup(prefix)
+            return True
+
+        except Exception as e:
+            had_error = True
+            print(f"Video download error (h={height}) for {chat_id}: {e}")
+            _cleanup(prefix)
+            continue
+
+    # وصلنا هنا = فشل في كل الجودات
+    if got_file_but_too_big and not had_error:
+        _report(chat_id, status_msg_id, texts[lang]['too_large'])
+    elif got_file_but_too_big:
+        _report(chat_id, status_msg_id, texts[lang]['too_large'])
+    else:
         _report(chat_id, status_msg_id, texts[lang]['error'])
-    finally:
-        for f in glob.glob(f'vid_{chat_id}_{token2}.*'):
-            try:
-                os.remove(f)
-            except:
-                pass
-    return ok
+    return False
 
 
 # تحميل الصوت (mp3)
 def download_audio(chat_id, url, lang, status_msg_id=None):
     token2 = rand_token()
+    prefix = f'aud_{chat_id}_{token2}.'
+    template = f'aud_{chat_id}_{token2}.%(ext)s'
     ok = False
     try:
-        template = f'aud_{chat_id}_{token2}.%(ext)s'
         with yt_dlp.YoutubeDL(get_ydl_opts_audio(template)) as ydl:
             info = ydl.extract_info(url, download=True)
+
         out_file = f'aud_{chat_id}_{token2}.mp3'
+        if not os.path.exists(out_file):
+            # احتياط: قد تختلف الامتداد قبل المعالجة
+            alt = _find_output(prefix)
+            if alt and alt.lower().endswith('.mp3'):
+                out_file = alt
+
         if os.path.exists(out_file):
             size_mb = os.path.getsize(out_file) / (1024 * 1024)
             if size_mb > MAX_FILE_SIZE_MB:
@@ -434,36 +560,41 @@ def download_audio(chat_id, url, lang, status_msg_id=None):
                 bot.send_audio(
                     chat_id, f,
                     caption=texts[lang]['audio_cap'],
-                    title=info.get('title', 'Audio'),
-                    performer=BOT_USERNAME
+                    title=(info.get('title') or 'Audio'),
+                    performer=BOT_USERNAME,
+                    timeout=300
                 )
             ok = True
     except Exception as e:
         print(f"Audio download error for {chat_id}: {e}")
     finally:
-        for f in glob.glob(f'aud_{chat_id}_{token2}.*'):
-            try:
-                os.remove(f)
-            except:
-                pass
+        _cleanup(prefix)
     return ok
 
 
-# التحميل بالرابط: فيديو ثم صوت تلقائياً بدون أزرار
+# التحميل بالرابط: فيديو ثم صوت تلقائياً
 def do_download_link(message, url, lang):
     chat_id = message.chat.id
-    status = bot.reply_to(message, texts[lang]['processing'])
-    # 1) الفيديو
-    download_video(chat_id, url, lang, status.message_id, reply_to=message.message_id)
+    try:
+        status = bot.reply_to(message, texts[lang]['processing'])
+        status_id = status.message_id
+    except Exception:
+        status_id = None
+
+    # 1) الفيديو (مع خفض الجودة تلقائياً)
+    download_video(chat_id, url, lang, status_id, reply_to=message.message_id)
+
     # 2) الصوت تلقائياً
     try:
         download_audio(chat_id, url, lang)
     except Exception as e:
         print(f"Auto-audio error for {chat_id}: {e}")
+
     # حذف رسالة "جاري التحميل"
     try:
-        bot.delete_message(chat_id, status.message_id)
-    except:
+        if status_id:
+            bot.delete_message(chat_id, status_id)
+    except Exception:
         pass
 
 
@@ -519,18 +650,23 @@ def handle_cast(message):
     status = bot.reply_to(message, f"⏳ جاري الإرسال إلى {len(all_users)} مستخدم...")
     success = 0
     failed = 0
-    for uid in all_users:
+    for i, uid in enumerate(all_users):
         try:
             bot.send_message(uid, f"📢 رسالة من الإدارة:\n\n{broadcast_msg}")
             success += 1
-        except:
+        except Exception:
             failed += 1
+        # تفادي حدود تيليجرام (rate limit)
+        if (i + 1) % 25 == 0:
+            time.sleep(1)
+        else:
+            time.sleep(0.05)
     try:
         bot.edit_message_text(
             f"✅ تم إرسال الإذاعة.\n\n📨 وصلت: {success}\n❌ فشلت: {failed}",
             chat_id, status.message_id
         )
-    except:
+    except Exception:
         bot.reply_to(message, f"✅ تم الإرسال إلى {success} مستخدم.")
 
 
@@ -573,16 +709,29 @@ def process_url(message):
         return
 
     if text.startswith("http"):
-        # تحميل بالرابط → فيديو ثم صوت تلقائياً
         if not check_sub(chat_id):
             bot.reply_to(message, texts[lang]['force_sub'], reply_markup=subscription_markup(lang))
             return
-        do_download_link(message, text, lang)
+        # ننفّذ التحميل في خيط منفصل حتى لا يتجمّد البوت
+        download_executor.submit(do_download_link, message, text, lang)
     else:
-        # ليس رابطاً → نطلب منه إرسال رابط
         bot.reply_to(message, texts[lang]['invalid_link'])
 
 
-print("✅ البوت يعمل الآن...")
-bot.remove_webhook()
-bot.infinity_polling(skip_pending=True, timeout=30)
+def main():
+    print("✅ البوت يعمل الآن...")
+    try:
+        bot.remove_webhook()
+    except Exception:
+        pass
+    # حلقة إعادة تشغيل تلقائية إذا انقطع الـ polling
+    while True:
+        try:
+            bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
+        except Exception as e:
+            print(f"Polling crashed, restarting in 5s: {e}")
+            time.sleep(5)
+
+
+if __name__ == "__main__":
+    main()
