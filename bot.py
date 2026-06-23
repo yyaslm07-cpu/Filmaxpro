@@ -3,6 +3,7 @@ from flask import Flask
 from threading import Thread
 from concurrent.futures import ThreadPoolExecutor
 import time
+import re
 
 # تشغيل خادم ويب صغير لإرضاء Render
 app = Flask(__name__)
@@ -23,7 +24,7 @@ Thread(target=run_web, daemon=True).start()
 
 # --- كود بوت التيليجرام ---
 
-# تحديث أداة التحميل تلقائياً عند كل إقلاع لمواكبة التحديثات
+# تحديث أداة التحميل تلقائياً عند كل إقلاع
 print("🔄 جاري تحديث مكتبة yt-dlp تلقائياً...")
 os.system("pip install -U yt-dlp")
 
@@ -41,12 +42,9 @@ apihelper.CONNECT_TIMEOUT = 30
 apihelper.READ_TIMEOUT = 300
 apihelper.RETRY_ON_ERROR = True
 
-# التوكن والمعرفات من متغيرات البيئة لحماية البيانات
+# التوكن والمعرفات من متغيرات البيئة
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "ضع_توكنك_هنا")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 1983356771))
-
-if BOT_TOKEN == "ضع_توكنك_هنا":
-    print("⚠️ تحذير: لم يتم ضبط BOT_TOKEN في متغيرات البيئة!")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -83,12 +81,11 @@ def _detect_ffmpeg():
 _detect_ffmpeg()
 
 
-# ====== بناء وملائمة ملف الكوكيز تلقائياً للمنصات الإقليمية ======
+# ====== بناء وملائمة ملف الكوكيز تلقائياً ======
 def _build_cookies_file():
     global COOKIES_FILE
     content = ""
     
-    # 1) محاولة القراءة من السيكرت فايل أولاً
     render_secret = "/etc/secrets/cookies.txt"
     if os.path.exists(render_secret) and os.path.getsize(render_secret) > 0:
         try:
@@ -97,11 +94,9 @@ def _build_cookies_file():
         except Exception as e:
             print(f"❌ تعذّر قراءة Secret File: {e}")
     
-    # 2) إذا لم يوجد، نقرأ من متغير البيئة
     if not content.strip():
         content = os.environ.get("COOKIES_CONTENT", "")
         
-    # 3) الاحتياط الأخير
     if not content.strip() and os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0:
         try:
             with open(COOKIES_FILE, "r", encoding="utf-8", errors="ignore") as f:
@@ -114,17 +109,16 @@ def _build_cookies_file():
         return
 
     try:
-        # [🔥 الحل الذري للخداع 🔥] تحويل محتوى نطاقات .com إلى .net داخل ملف الكوكيز لتقبله المكتبة رسمياً
         if "threads.com" in content:
             content = content.replace("threads.com", "threads.net")
-            print("🔄 تم تطويع كوكيز ثريدز وتحويل نطاقاتها داخلياً إلى threads.net!")
+            print("🔄 تم تطويع نطاقات الكوكيز داخلياً!")
             
         if "\\n" in content and "\n" not in content:
             content = content.replace("\\n", "\n")
             
         with open(COOKIES_FILE, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"✅ تم إنشاء وتحديث ملف الكوكيز الموحد ({os.path.getsize(COOKIES_FILE)} بايت)")
+        print(f"✅ تم إنشاء وتحديث ملف الكوكيز המوحد ({os.path.getsize(COOKIES_FILE)} بايت)")
     except Exception as e:
         print(f"❌ تعذّر كتابة ملف الكوكيز: {e}")
 
@@ -212,7 +206,7 @@ bot.set_my_commands([
     BotCommand("admin", "الادمن فقط")
 ])
 
-# قاموس اللغات السبع كامل ومحفوظ بالكامل
+# قاموس اللغات السبع كامل ومحفوظ بالكامل دون أي نقص
 texts = {
     'ar': {
         'welcome': f"⚖️┇أهلاً بك عزيزي، مع {BOT_USERNAME} يمكنك تحميل من عدة مواقع بصيغ متعددة والاستماع اليها في أي وقت،\n\n💠┇المنصات المدعومة:\n\n📥  يوتيوب         | 📥  انستكرام\n📥  فيسبوك       | 📥  تويتر/X\n📥  تيك توك       | 📥  سناب شات\n📥  ساوند كلاود  | 📥  بينترست\n📥  لايكي            | 📥  كواي\n📥  تيليجرام       | 📥  PMC Music\n📥  تمبلر            | 📥  ديلي موشن\n📥  فيميو           | 📥  ثريدز\n📥  فانيميت       | 📥  كاب كات\n\n- أرسل رابط المنشور للتحميل 📥\nولا تنسى قم بمشاركه البوت لاصدقائك  📥",
@@ -285,7 +279,7 @@ texts = {
     'hi': {
         'welcome': f"⚖️┇स्वागत है! {BOT_USERNAME} के साथ आप कई साइटों से डाउनलोड कर सकते हैं।\n\n- बस लिंक भेजें 📥",
         'usage': "💠┇उपयोग कैसे करें:\nवीडियो का लिंक भेजें।",
-        'force_sub': "ক্ষমা করুন, আপনাকে প্রথমে আমাদের চ্যানেলের সদস্যता নিতে হবে 👇",
+        'force_sub': "क्षमा करें, आपको पहले हमारे चैनल की सदस्यता लेनी होगी 👇",
         'sub_tg': "टेलीग्राम से जुड़ें 📢",
         'sub_yt': "यूट्यूब से जुड़ें 📺",
         'usage_btn': "💡 उपयोग कैसे करें।",
@@ -293,9 +287,9 @@ texts = {
         'choose_lang': "अपनी भाषा चुनें 👇",
         'processing': "डाउनलोड हो रहा है... ⏳",
         'invalid_link': "कृपया केवल वैध लिंक भेजें ❌",
-        'success': f"سफलतापूर्वक डाउनलोड किया गया ✅\n{BOT_USERNAME}",
+        'success': f"सफलतापूर्वक डाउनलोड किया गया ✅\n{BOT_USERNAME}",
         'audio_cap': f"ऑडियो ट्रैक 🎵\n{BOT_USERNAME}",
-        'share': "बॉट साझा करें 📤",
+        'share': "بॉट साझा करें 📤",
         'error': "एक त्रुटિ हुई। लिंक की जांच करें।",
         'too_large': f"❌ फ़ाइल {MAX_FILE_SIZE_MB}MB से बड़ी है।",
     },
@@ -313,7 +307,7 @@ texts = {
         'success': f"সফলভাবে ডাউনলোড হয়েছে ✅\n{BOT_USERNAME}",
         'audio_cap': f"অডিও ট্র্যাক 🎵\n{BOT_USERNAME}",
         'share': "বট শেয়ার করুন 📤",
-        'error': "একটি ত্রুটি ঘটেছে। लिंकটি পরীক্ষা করুন।",
+        'error': "একটি ত্রুটি ঘটেছে। লিংকটি পরীক্ষা করুন।",
         'too_large': f"❌ ফাইলের আকার {MAX_FILE_SIZE_MB}MB এর বেশি।",
     },
     'ru': {
@@ -576,28 +570,29 @@ def download_audio(chat_id, url, lang):
     return ok
 
 
-# [🔥 الحل السحري لتنظيف الروابط بالكامل للأداة الرسمية 🔥]
+# [⚙️ التعديل الجوهري الحاسم لحماية اليوتيوب والمنصات الأخرى من القص ⚙️]
 def clean_url(url):
     url = url.strip()
     
+    # التعديل والقص يتم حصرياً وإجبارياً لروابط ثريدز فقط!
     if "threads.com" in url or "threads.net" in url:
-        # تحويل الرابط إجبارياً إلى النطاق الأصلي المدعوم بمكتبة yt-dlp
         url = url.replace("threads.com", "threads.net")
+        if "?" in url:
+            url = url.split("?")[0]
+            
+        match_post = re.search(r"/post/([^/]+)", url)
+        match_t = re.search(r"/t/([^/]+)", url)
         
-        if "?" in url:
-            url = url.split("?")[0]
+        if match_post:
+            post_id = match_post.group(1)
+            username_part = url.split("/post/")[0]
+            username = username_part.split("/")[-1].replace("@", "")
+            url = f"https://www.threads.net/@{username}/post/{post_id}"
+        elif match_t:
+            t_id = match_t.group(1)
+            url = f"https://www.threads.net/t/{t_id}"
             
-        # زرع علامة الـ @ واسم المستخدم بشكل يتعرف عليه المستخرج الأصلي دون أخطاء
-        # مثال: تحويل threads.net/3experiencs/post/ إلى threads.net/@3experiencs/post/
-        if "/post/" in url and "net/@" not in url:
-            if "www.threads.net/" in url:
-                url = url.replace("www.threads.net/", "www.threads.net/@")
-            elif "threads.net/" in url:
-                url = url.replace("threads.net/", "threads.net/@")
-    else:
-        if "?" in url:
-            url = url.split("?")[0]
-            
+    # يوتيوب وبقية المنصات تخرج من الدالة نظيفة تماماً كما أرسلها المستخدم لضمان سلامتها
     return url
 
 
