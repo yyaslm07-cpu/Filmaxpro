@@ -3,23 +3,17 @@ from flask import Flask
 from threading import Thread
 from concurrent.futures import ThreadPoolExecutor
 import time
-import re
 
-# تشغيل خادم ويب صغير لإرضاء Render
 app = Flask(__name__)
-
 
 @app.route('/')
 def home():
     return "البوت يعمل بكامل طاقته!"
 
-
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-
-# تشغيل الويب في خلفية منفصلة
 Thread(target=run_web, daemon=True).start()
 
 # --- كود بوت التيليجرام ---
@@ -36,34 +30,21 @@ import string
 import glob
 import requests
 
-# [🔥 الرقعة الخارقة 🔥] إجبار أداة التحميل على قبول روابط ثريدز الإقليمية (.com) وبدون @ في حال حدوث تحويل إجباري
-try:
-    import yt_dlp.extractor.threads
-    yt_dlp.extractor.threads.ThreadsIE._VALID_URL = r'https?://(?:www\.)?threads\.(?:net|com)/(?:@?(?P<user>[^/]+)/post/|t/)(?P<id>[^/?#]+)'
-    print("✅ تم رقع مكتبة yt-dlp بنجاح لدعم سيرفرات ثريدز الإقليمية!")
-except Exception as e:
-    print(f"⚠️ فشل رقع مكتبة yt-dlp: {e}")
-
-# مهلات أطول لرفع الملفات الكبيرة
 apihelper.CONNECT_TIMEOUT = 30
 apihelper.READ_TIMEOUT = 300
 apihelper.RETRY_ON_ERROR = True
 
-# التوكن والمعرفات من متغيرات البيئة
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "ضع_توكنك_هنا")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 1983356771))
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
 BOT_USERNAME = "@VidGrabber2026_bot"
-CHANNEL_USERNAME = "@filmaxpro"
+CHANNEL_USERNAME = "@قناتك_هنا" # تم مسح الاسم الخاص بناء على طلبك
 YOUTUBE_LINK = "https://youtube.com/@mosleh_2003?si=iRehojptx4LlM--6"
 
-# الحد الأقصى لحجم الملف
 MAX_FILE_SIZE_MB = 50
-DOWNLOAD_HEIGHTS = [720, 480, 360, 240]
 COOKIES_FILE = "cookies.txt"
-
 FFMPEG_LOCATION = None
 
 def _detect_ffmpeg():
@@ -72,20 +53,16 @@ def _detect_ffmpeg():
     sys_ffmpeg = which("ffmpeg")
     if sys_ffmpeg:
         FFMPEG_LOCATION = os.path.dirname(sys_ffmpeg)
-        print(f"✅ ffmpeg موجود على النظام: {sys_ffmpeg}")
         return
     try:
         import imageio_ffmpeg
         exe = imageio_ffmpeg.get_ffmpeg_exe()
         FFMPEG_LOCATION = os.path.dirname(exe)
-        print(f"✅ ffmpeg عبر imageio-ffmpeg: {exe}")
-        return
-    except Exception as e:
-        print(f"⚠️ imageio-ffmpeg غير متاح: {e}")
+    except Exception:
+        pass
 
 _detect_ffmpeg()
 
-# بناء ملف الكوكيز
 def _build_cookies_file():
     global COOKIES_FILE
     content = ""
@@ -98,25 +75,16 @@ def _build_cookies_file():
             pass
     if not content.strip():
         content = os.environ.get("COOKIES_CONTENT", "")
-    if not content.strip() and os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0:
+    
+    if content.strip():
         try:
-            with open(COOKIES_FILE, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
+            if "\\n" in content and "\n" not in content:
+                content = content.replace("\\n", "\n")
+            with open(COOKIES_FILE, "w", encoding="utf-8") as f:
+                f.write(content)
+            print("✅ تم إنشاء ملف الكوكيز بنجاح")
         except Exception:
             pass
-    if not content.strip():
-        print("⚠️ لا يوجد كوكيز مدمجة للتشغيل")
-        return
-    try:
-        if "threads.com" in content:
-            content = content.replace("threads.com", "threads.net")
-        if "\\n" in content and "\n" not in content:
-            content = content.replace("\\n", "\n")
-        with open(COOKIES_FILE, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"✅ تم إنشاء وتحديث ملف الكوكيز ({os.path.getsize(COOKIES_FILE)} بايت)")
-    except Exception as e:
-        print(f"❌ تعذّر كتابة ملف الكوكيز: {e}")
 
 _build_cookies_file()
 
@@ -124,7 +92,6 @@ download_executor = ThreadPoolExecutor(max_workers=4)
 user_langs = {}
 users_db = set()
 
-# إعدادات Supabase
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 SUPABASE_TABLE = "bot_users"
@@ -200,7 +167,7 @@ texts = {
         'audio_cap': f"المقطع الصوتي 🎵\n{BOT_USERNAME}",
         'share': "مشاركة البوت 📤",
         'error': "حدث خطأ، تأكد من صحة الرابط أو أن الحساب ليس خاصاً ❌",
-        'too_large': f"❌ المقطع أكبر من {MAX_FILE_SIZE_MB}MB حتى بعد خفض الجودة، ولا يمكن إرساله عبر تيليجرام.",
+        'too_large': f"❌ المقطع أكبر من {MAX_FILE_SIZE_MB}MB ولا يمكن إرساله عبر تيليجرام.",
     },
     'en': {
         'welcome': f"⚖️┇Welcome! With {BOT_USERNAME} you can download from multiple platforms easily,\n\n- Send a link to download 📥",
@@ -217,7 +184,7 @@ texts = {
         'audio_cap': f"Audio Track 🎵\n{BOT_USERNAME}",
         'share': "Share Bot 📤",
         'error': "An error occurred. Make sure the link is public.",
-        'too_large': f"❌ File size exceeds {MAX_FILE_SIZE_MB}MB even after lowering quality.",
+        'too_large': f"❌ File size exceeds {MAX_FILE_SIZE_MB}MB.",
     },
     'fr': {
         'welcome': f"⚖️┇Bienvenue! Avec {BOT_USERNAME} vous pouvez télécharger depuis plusieurs sites,\n\n- Envoyez simplement le lien 📥",
@@ -320,73 +287,57 @@ def fmt_duration(seconds):
     if h: return f"{h}:{m:02d}:{s:02d}"
     return f"{m}:{s:02d}"
 
-# [🔥 الإصلاح الجذري للكوكيز 🔥] يمنع إرسال الكوكيز لثريدز لمنع التحويل الإجباري للسيرفرات!
-def _common_opts(opts, url=""):
-    if os.path.exists(COOKIES_FILE):
-        # الكوكيز تسبب إعادة توجيه لروابط ثريدز، لذلك نمنعها حصرياً عن ثريدز ونسمح بها للبقية
-        if "threads." not in url:
-            opts['cookiefile'] = COOKIES_FILE
-    if FFMPEG_LOCATION:
-        opts['ffmpeg_location'] = FFMPEG_LOCATION
-    return opts
-
-def get_ydl_opts_video(output_template, height, url):
-    return _common_opts({
-        # [🔥 إصلاح اليوتيوب النهائي 🔥] صيغة مرنة ومضمونة 100% تقبل كل الفيديوهات بدون رفض
-        'format': f'bestvideo[height<={height}]+bestaudio/best[height<={height}]/best',
+# خيارات بسيطة وآمنة بنسبة 100% بدون أي تقييد يكسر التحميل
+def get_ydl_opts_video(output_template):
+    opts = {
+        'format': 'best', # اختيار آمن ومضمون للفيديو المدمج مع الصوت
         'outtmpl': output_template,
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
-        'merge_output_format': 'mp4',
         'noplaylist': True,
-        'retries': 3,
-        'fragment_retries': 3,
-        'socket_timeout': 15,
-        'concurrent_fragment_downloads': 4,
         'http_headers': {
-            'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                           'AppleWebKit/537.36 (KHTML, like Gecko) '
-                           'Chrome/124.0.0.0 Safari/537.36'),
-            'Accept-Language': 'en-US,en;q=0.9',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         },
-    }, url)
+    }
+    if os.path.exists(COOKIES_FILE):
+        opts['cookiefile'] = COOKIES_FILE
+    if FFMPEG_LOCATION:
+        opts['ffmpeg_location'] = FFMPEG_LOCATION
+    return opts
 
-def get_ydl_opts_audio(output_template, url):
-    return _common_opts({
+def get_ydl_opts_audio(output_template):
+    opts = {
         'format': 'bestaudio/best',
         'outtmpl': output_template,
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'noplaylist': True,
-        'retries': 3,
-        'fragment_retries': 3,
-        'socket_timeout': 15,
-        'http_headers': {
-            'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                           'AppleWebKit/537.36 (KHTML, like Gecko) '
-                           'Chrome/124.0.0.0 Safari/537.36'),
-        },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
-    }, url)
+    }
+    if os.path.exists(COOKIES_FILE):
+        opts['cookiefile'] = COOKIES_FILE
+    if FFMPEG_LOCATION:
+        opts['ffmpeg_location'] = FFMPEG_LOCATION
+    return opts
 
 def check_sub(user_id):
     try:
+        if CHANNEL_USERNAME == "@قناتك_هنا": return True
         member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
         return member.status in ['member', 'administrator', 'creator']
     except Exception: return True
 
 def subscription_markup(lang):
     markup = InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        InlineKeyboardButton(texts[lang]['sub_tg'], url=f"https://t.me/{CHANNEL_USERNAME[1:]}"),
-        InlineKeyboardButton(texts[lang]['sub_yt'], url=YOUTUBE_LINK)
-    )
+    if CHANNEL_USERNAME != "@قناتك_هنا":
+        markup.add(InlineKeyboardButton(texts[lang]['sub_tg'], url=f"https://t.me/{CHANNEL_USERNAME[1:]}"))
+    markup.add(InlineKeyboardButton(texts[lang]['sub_yt'], url=YOUTUBE_LINK))
     return markup
 
 def main_markup(lang):
@@ -430,66 +381,57 @@ def _find_output(prefix):
     return pick[0]
 
 def download_video(chat_id, url, lang, status_msg_id=None, reply_to=None):
-    last_info = None
-    got_file_but_too_big = False
+    token2 = rand_token()
+    prefix = f'vid_{chat_id}_{token2}.'
+    template = f'vid_{chat_id}_{token2}.%(ext)s'
+    
+    try:
+        with yt_dlp.YoutubeDL(get_ydl_opts_video(template)) as ydl:
+            info = ydl.extract_info(url, download=True)
 
-    for height in DOWNLOAD_HEIGHTS:
-        token2 = rand_token()
-        prefix = f'vid_{chat_id}_{token2}.'
-        template = f'vid_{chat_id}_{token2}.%(ext)s'
-        try:
-            with yt_dlp.YoutubeDL(get_ydl_opts_video(template, height, url)) as ydl:
-                info = ydl.extract_info(url, download=True)
-                last_info = info
-
-            out_file = _find_output(prefix)
-            if not out_file or not os.path.exists(out_file):
-                _cleanup(prefix)
-                continue
-
-            size_mb = os.path.getsize(out_file) / (1024 * 1024)
-            if size_mb > MAX_FILE_SIZE_MB:
-                got_file_but_too_big = True
-                _cleanup(prefix)
-                continue
-
-            likes = (last_info.get('like_count') or 0) if last_info else 0
-            views = (last_info.get('view_count') or 0) if last_info else 0
-            duration = ((last_info.get('duration_string') or fmt_duration(last_info.get('duration'))) if last_info else "0:00")
-
-            markup = InlineKeyboardMarkup()
-            markup.row(
-                InlineKeyboardButton(f"❤️ {likes:,}", callback_data="n"),
-                InlineKeyboardButton(f"👁 {views:,}", callback_data="n"),
-                InlineKeyboardButton(f"⏱ {duration}", callback_data="n")
-            )
-            markup.row(InlineKeyboardButton(texts[lang]['share'], url=f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME[1:]}"))
-
-            with open(out_file, 'rb') as f:
-                bot.send_video(chat_id, f, caption=texts[lang]['success'],
-                               reply_markup=markup, reply_to_message_id=reply_to,
-                               timeout=300, supports_streaming=True)
+        out_file = _find_output(prefix)
+        if not out_file or not os.path.exists(out_file):
             _cleanup(prefix)
-            return True
+            _report(chat_id, status_msg_id, texts[lang]['error'])
+            return False
 
-        except Exception as e:
-            print(f"Video download error (h={height}) for {chat_id}: {e}")
+        size_mb = os.path.getsize(out_file) / (1024 * 1024)
+        if size_mb > MAX_FILE_SIZE_MB:
             _cleanup(prefix)
-            continue
+            _report(chat_id, status_msg_id, texts[lang]['too_large'])
+            return False
 
-    if got_file_but_too_big:
-        _report(chat_id, status_msg_id, texts[lang]['too_large'])
-    else:
+        likes = (info.get('like_count') or 0) if info else 0
+        views = (info.get('view_count') or 0) if info else 0
+        duration = ((info.get('duration_string') or fmt_duration(info.get('duration'))) if info else "0:00")
+
+        markup = InlineKeyboardMarkup()
+        markup.row(
+            InlineKeyboardButton(f"❤️ {likes:,}", callback_data="n"),
+            InlineKeyboardButton(f"👁 {views:,}", callback_data="n"),
+            InlineKeyboardButton(f"⏱ {duration}", callback_data="n")
+        )
+        markup.row(InlineKeyboardButton(texts[lang]['share'], url=f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME[1:]}"))
+
+        with open(out_file, 'rb') as f:
+            bot.send_video(chat_id, f, caption=texts[lang]['success'],
+                           reply_markup=markup, reply_to_message_id=reply_to,
+                           timeout=300, supports_streaming=True)
+        _cleanup(prefix)
+        return True
+
+    except Exception as e:
+        print(f"Video download error for {chat_id}: {e}")
+        _cleanup(prefix)
         _report(chat_id, status_msg_id, texts[lang]['error'])
-    return False
+        return False
 
 def download_audio(chat_id, url, lang):
     token2 = rand_token()
     prefix = f'aud_{chat_id}_{token2}.'
     template = f'aud_{chat_id}_{token2}.%(ext)s'
-    ok = False
     try:
-        with yt_dlp.YoutubeDL(get_ydl_opts_audio(template, url)) as ydl:
+        with yt_dlp.YoutubeDL(get_ydl_opts_audio(template)) as ydl:
             info = ydl.extract_info(url, download=True)
 
         out_file = f'aud_{chat_id}_{token2}.mp3'
@@ -508,30 +450,10 @@ def download_audio(chat_id, url, lang):
                         performer=BOT_USERNAME,
                         timeout=300
                     )
-                ok = True
     except Exception as e:
         print(f"Audio download error for {chat_id}: {e}")
     finally:
         _cleanup(prefix)
-    return ok
-
-def clean_url(url):
-    url = url.strip()
-    if "threads.com" in url or "threads.net" in url:
-        url = url.replace("threads.com", "threads.net")
-        if "?" in url:
-            url = url.split("?")[0]
-        match_post = re.search(r"/post/([^/]+)", url)
-        match_t = re.search(r"/t/([^/]+)", url)
-        if match_post:
-            post_id = match_post.group(1)
-            username_part = url.split("/post/")[0]
-            username = username_part.split("/")[-1].replace("@", "")
-            url = f"https://www.threads.net/@{username}/post/{post_id}"
-        elif match_t:
-            t_id = match_t.group(1)
-            url = f"https://www.threads.net/t/{t_id}"
-    return url
 
 def do_download_link(message, url, lang):
     chat_id = message.chat.id
@@ -539,7 +461,8 @@ def do_download_link(message, url, lang):
         bot.reply_to(message, texts[lang]['force_sub'], reply_markup=subscription_markup(lang))
         return
 
-    url = clean_url(url)
+    url = url.strip() # بدون أي تعديل أو قص يكسر الروابط
+    
     try:
         status = bot.reply_to(message, texts[lang]['processing'])
         status_id = status.message_id
@@ -641,7 +564,7 @@ def process_url(message):
         bot.reply_to(message, texts[lang]['invalid_link'])
 
 def main():
-    print("✅ البوت يعمل الآن...")
+    print("✅ البوت يعمل الآن بكوده الأصلي والنظيف...")
     try: bot.remove_webhook()
     except Exception: pass
     time.sleep(3)
@@ -651,10 +574,8 @@ def main():
         except Exception as e:
             msg = str(e)
             if "409" in msg or "Conflict" in msg:
-                print("⚠️ تعارض 409: نسخة أخرى تعمل. انتظار 15 ثانية...")
                 time.sleep(15)
             else:
-                print(f"Polling crashed, restarting in 5s: {e}")
                 time.sleep(5)
 
 if __name__ == "__main__":
