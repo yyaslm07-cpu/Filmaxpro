@@ -1,25 +1,27 @@
-import os
+Import os
 from flask import Flask
 from threading import Thread
 from concurrent.futures import ThreadPoolExecutor
 import time
 
+# تشغيل خادم ويب صغير لإرضاء Render
 app = Flask(__name__)
+
 
 @app.route('/')
 def home():
     return "البوت يعمل بكامل طاقته!"
 
+
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
+
+# تشغيل الويب في خلفية منفصلة
 Thread(target=run_web, daemon=True).start()
 
 # --- كود بوت التيليجرام ---
-
-print("🔄 جاري تحديث مكتبة yt-dlp تلقائياً...")
-os.system("pip install -U yt-dlp")
 
 import telebot
 import telebot.apihelper as apihelper
@@ -30,71 +32,110 @@ import string
 import glob
 import requests
 
+# مهلات أطول لرفع الملفات الكبيرة (مهم للملفات قرب 50MB على Render)
 apihelper.CONNECT_TIMEOUT = 30
 apihelper.READ_TIMEOUT = 300
 apihelper.RETRY_ON_ERROR = True
 
+# التوكن من متغير بيئة
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "ضع_توكنك_هنا")
-ADMIN_ID = int(os.environ.get("ADMIN_ID", 1983356771))
+if BOT_TOKEN == "ضع_توكنك_هنا":
+    print("⚠️ تحذير: لم يتم ضبط BOT_TOKEN في متغيرات البيئة!")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
 BOT_USERNAME = "@VidGrabber2026_bot"
-CHANNEL_USERNAME = "@قناتك_هنا" # تم مسح الاسم الخاص بناء على طلبك
+CHANNEL_USERNAME = "@filmaxpro"
 YOUTUBE_LINK = "https://youtube.com/@mosleh_2003?si=iRehojptx4LlM--6"
+ADMIN_ID = 1983356771
 
+# الحد الأقصى لحجم الملف (50MB = حد تيليجرام Bot API)
 MAX_FILE_SIZE_MB = 50
+
+# جودات يتم تجربتها بالترتيب حتى يدخل الملف تحت الحد (مع ضمان وجود الصوت)
+DOWNLOAD_HEIGHTS = [720, 480, 360, 240]
+
+# ملف الكوكيز (اختياري) — يُضاف فقط إذا كان موجوداً
 COOKIES_FILE = "cookies.txt"
+
+# ====== تحديد مسار ffmpeg تلقائياً (الحل الجذري لمشكلة "بدون صوت") ======
+# الأولوية: ffmpeg المثبّت على النظام، ثم نسخة imageio-ffmpeg الجاهزة.
 FFMPEG_LOCATION = None
+
 
 def _detect_ffmpeg():
     global FFMPEG_LOCATION
+    # 1) ffmpeg مثبّت على النظام (PATH)؟
     from shutil import which
     sys_ffmpeg = which("ffmpeg")
     if sys_ffmpeg:
         FFMPEG_LOCATION = os.path.dirname(sys_ffmpeg)
+        print(f"✅ ffmpeg موجود على النظام: {sys_ffmpeg}")
         return
+    # 2) نسخة imageio-ffmpeg الجاهزة (تُثبّت عبر pip بدون Docker)
     try:
         import imageio_ffmpeg
         exe = imageio_ffmpeg.get_ffmpeg_exe()
         FFMPEG_LOCATION = os.path.dirname(exe)
-    except Exception:
-        pass
+        print(f"✅ ffmpeg عبر imageio-ffmpeg: {exe}")
+        return
+    except Exception as e:
+        print(f"⚠️ imageio-ffmpeg غير متاح: {e}")
+    print("❌ تحذير خطير: لم يُعثر على ffmpeg — ستظهر مقاطع بدون صوت! "
+          "ثبّت imageio-ffmpeg أو ffmpeg على النظام.")
+
 
 _detect_ffmpeg()
 
+
+# ====== بناء ملف الكوكيز من متغير بيئة (الحل ليوتيوب وثريدز على Render) ======
+# Render يمسح الملفات بين عمليات النشر، لذلك نخزّن محتوى cookies.txt في متغير
+# بيئة اسمه COOKIES_CONTENT، والكود يكتبه إلى ملف عند كل إقلاع.
 def _build_cookies_file():
-    global COOKIES_FILE
-    content = ""
+    # 1) إذا كان الملف موجوداً مسبقاً (Render Secret File في مجلد التشغيل) نستخدمه
+    if os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0:
+        print(f"✅ ملف الكوكيز موجود ({os.path.getsize(COOKIES_FILE)} بايت)")
+        return
+    # 2) Render Secret Files تُحفظ عادةً في /etc/secrets/
     render_secret = "/etc/secrets/cookies.txt"
     if os.path.exists(render_secret) and os.path.getsize(render_secret) > 0:
         try:
             with open(render_secret, "r", encoding="utf-8", errors="ignore") as src:
-                content = src.read()
-        except Exception:
-            pass
+                data = src.read()
+            with open(COOKIES_FILE, "w", encoding="utf-8") as dst:
+                dst.write(data)
+            print(f"✅ تم نسخ الكوكيز من Secret File ({os.path.getsize(COOKIES_FILE)} بايت)")
+            return
+        except Exception as e:
+            print(f"❌ تعذّر نسخ Secret File: {e}")
+    # 3) أو من متغير بيئة COOKIES_CONTENT
+    content = os.environ.get("COOKIES_CONTENT", "")
     if not content.strip():
-        content = os.environ.get("COOKIES_CONTENT", "")
-    
-    if content.strip():
-        try:
-            if "\\n" in content and "\n" not in content:
-                content = content.replace("\\n", "\n")
-            with open(COOKIES_FILE, "w", encoding="utf-8") as f:
-                f.write(content)
-            print("✅ تم إنشاء ملف الكوكيز بنجاح")
-        except Exception:
-            pass
+        print("⚠️ لا يوجد كوكيز — يوتيوب/ثريدز قد يفشلان (طبيعي بدون كوكيز)")
+        return
+    try:
+        if "\\n" in content and "\n" not in content:
+            content = content.replace("\\n", "\n")
+        with open(COOKIES_FILE, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"✅ تم إنشاء ملف الكوكيز ({os.path.getsize(COOKIES_FILE)} بايت)")
+    except Exception as e:
+        print(f"❌ تعذّر كتابة ملف الكوكيز: {e}")
+
 
 _build_cookies_file()
 
+# منفّذ خيوط للتحميلات حتى لا يتجمّد البوت أثناء التحميل
 download_executor = ThreadPoolExecutor(max_workers=4)
+
 user_langs = {}
 users_db = set()
 
+# إعدادات Supabase
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 SUPABASE_TABLE = "bot_users"
+
 
 def _supabase_headers():
     return {
@@ -103,21 +144,29 @@ def _supabase_headers():
         "Content-Type": "application/json",
     }
 
+
 def supabase_ready():
     return bool(SUPABASE_URL and SUPABASE_KEY)
 
+
 def db_add_user(user_id):
+    """يحفظ المستخدم في Supabase + في الذاكرة."""
     users_db.add(user_id)
-    if not supabase_ready(): return
+    if not supabase_ready():
+        return
     try:
         url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}"
         headers = _supabase_headers()
         headers["Prefer"] = "resolution=ignore-duplicates,return=minimal"
-        requests.post(url, headers=headers, json={"user_id": user_id}, timeout=10)
-    except Exception: pass
+        requests.post(url, headers=headers,
+                      json={"user_id": user_id}, timeout=10)
+    except Exception as e:
+        print(f"Supabase add error: {e}")
+
 
 def db_get_all_users():
-    if not supabase_ready(): return list(users_db)
+    if not supabase_ready():
+        return list(users_db)
     try:
         url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?select=user_id"
         r = requests.get(url, headers=_supabase_headers(), timeout=15)
@@ -125,11 +174,14 @@ def db_get_all_users():
             ids = [row["user_id"] for row in r.json()]
             users_db.update(ids)
             return ids
-    except Exception: pass
+    except Exception as e:
+        print(f"Supabase get error: {e}")
     return list(users_db)
 
+
 def db_count_users():
-    if not supabase_ready(): return len(users_db)
+    if not supabase_ready():
+        return len(users_db)
     try:
         url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?select=user_id"
         headers = _supabase_headers()
@@ -139,12 +191,22 @@ def db_count_users():
         cr = r.headers.get("Content-Range", "")
         if "/" in cr:
             total = cr.split("/")[-1]
-            if total.isdigit(): return int(total)
-    except Exception: pass
+            if total.isdigit():
+                return int(total)
+    except Exception as e:
+        print(f"Supabase count error: {e}")
     return len(users_db)
 
+
+# تحميل المستخدمين عند الإقلاع
 if supabase_ready():
-    db_get_all_users()
+    try:
+        db_get_all_users()
+        print(f"✅ تم تحميل {len(users_db)} مستخدم من Supabase")
+    except Exception as e:
+        print(f"تعذّر تحميل المستخدمين عند الإقلاع: {e}")
+else:
+    print("⚠️ Supabase غير مفعّل — الحفظ مؤقت فقط")
 
 bot.set_my_commands([
     BotCommand("start", "بدء الان"),
@@ -167,7 +229,7 @@ texts = {
         'audio_cap': f"المقطع الصوتي 🎵\n{BOT_USERNAME}",
         'share': "مشاركة البوت 📤",
         'error': "حدث خطأ، تأكد من صحة الرابط أو أن الحساب ليس خاصاً ❌",
-        'too_large': f"❌ المقطع أكبر من {MAX_FILE_SIZE_MB}MB ولا يمكن إرساله عبر تيليجرام.",
+        'too_large': f"❌ المقطع أكبر من {MAX_FILE_SIZE_MB}MB حتى بعد خفض الجودة، ولا يمكن إرساله عبر تيليجرام.",
     },
     'en': {
         'welcome': f"⚖️┇Welcome! With {BOT_USERNAME} you can download from multiple platforms easily,\n\n- Send a link to download 📥",
@@ -184,7 +246,7 @@ texts = {
         'audio_cap': f"Audio Track 🎵\n{BOT_USERNAME}",
         'share': "Share Bot 📤",
         'error': "An error occurred. Make sure the link is public.",
-        'too_large': f"❌ File size exceeds {MAX_FILE_SIZE_MB}MB.",
+        'too_large': f"❌ File size exceeds {MAX_FILE_SIZE_MB}MB even after lowering quality, cannot send via Telegram.",
     },
     'fr': {
         'welcome': f"⚖️┇Bienvenue! Avec {BOT_USERNAME} vous pouvez télécharger depuis plusieurs sites,\n\n- Envoyez simplement le lien 📥",
@@ -231,10 +293,10 @@ texts = {
         'choose_lang': "अपनी भाषा चुनें 👇",
         'processing': "डाउनलोड हो रहा है... ⏳",
         'invalid_link': "कृपया केवल वैध लिंक भेजें ❌",
-        'success': f"سफलतापूर्वक डाउनलोड किया गया ✅\n{BOT_USERNAME}",
+        'success': f"सफलतापूर्वक डाउनलोड किया गया ✅\n{BOT_USERNAME}",
         'audio_cap': f"ऑडियो ट्रैक 🎵\n{BOT_USERNAME}",
         'share': "बॉट साझा करें 📤",
-        'error': "एक त्रुटિ हुई। लिंक की जांच करें।",
+        'error': "एक त्रुटि हुई। लिंक की जांच करें।",
         'too_large': f"❌ फ़ाइल {MAX_FILE_SIZE_MB}MB से बड़ी है।",
     },
     'bn': {
@@ -251,7 +313,7 @@ texts = {
         'success': f"সফলভাবে ডাউনলোড হয়েছে ✅\n{BOT_USERNAME}",
         'audio_cap': f"অডিও ট্র্যাক 🎵\n{BOT_USERNAME}",
         'share': "বট শেয়ার করুন 📤",
-        'error': "একটি ত্রুটি ঘটেছে।",
+        'error': "একটি ত্রুটি ঘটেছে। লিংকটি পরীক্ষা করুন।",
         'too_large': f"❌ ফাইলের আকার {MAX_FILE_SIZE_MB}MB এর বেশি।",
     },
     'ru': {
@@ -269,76 +331,122 @@ texts = {
         'audio_cap': f"Аудиодорожка 🎵\n{BOT_USERNAME}",
         'share': "Поделиться ботом 📤",
         'error': "Произошла ошибка. Проверьте ссылку.",
-        'too_large': f"❌ Файл больше {MAX_FILE_SIZE_MB}MB.",
+        'too_large': f"❌ Файл больше {MAX_FILE_SIZE_MB}MB, невозможно отправить.",
     }
 }
 
+
 def t(lang, key):
-    return (texts.get(lang, {}).get(key) or texts['ar'].get(key) or texts['en'].get(key) or key)
+    return (texts.get(lang, {}).get(key)
+            or texts['ar'].get(key)
+            or texts['en'].get(key)
+            or key)
+
 
 def rand_token(n=10):
     return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(n))
 
+
 def fmt_duration(seconds):
-    try: seconds = int(seconds)
-    except (TypeError, ValueError): return "0:00"
+    try:
+        seconds = int(seconds)
+    except (TypeError, ValueError):
+        return "0:00"
     m, s = divmod(seconds, 60)
     h, m = divmod(m, 60)
-    if h: return f"{h}:{m:02d}:{s:02d}"
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
     return f"{m}:{s:02d}"
 
-# خيارات بسيطة وآمنة بنسبة 100% بدون أي تقييد يكسر التحميل
-def get_ydl_opts_video(output_template):
-    opts = {
-        'format': 'best', # اختيار آمن ومضمون للفيديو المدمج مع الصوت
-        'outtmpl': output_template,
-        'quiet': True,
-        'no_warnings': True,
-        'nocheckcertificate': True,
-        'noplaylist': True,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        },
-    }
+
+# يضيف الكوكيز + مسار ffmpeg تلقائياً
+def _common_opts(opts):
     if os.path.exists(COOKIES_FILE):
         opts['cookiefile'] = COOKIES_FILE
     if FFMPEG_LOCATION:
         opts['ffmpeg_location'] = FFMPEG_LOCATION
     return opts
 
+
+def _video_format(height):
+    """
+    صيغة مرنة تضمن وجود الصوت وتتجنب 'Requested format is not available':
+    - تحاول دمج أفضل فيديو + أفضل صوت (يحتاج ffmpeg)
+    - ثم ملف مدمج جاهز
+    - وأخيراً أي فيديو+أي صوت بدون قيد الطول (يضمن النجاح دائماً)
+    """
+    return (
+        f'bv*[height<={height}]+ba/'
+        f'b[height<={height}]/'
+        f'bv*+ba/'
+        f'b/'
+        f'best'
+    )
+
+
+def get_ydl_opts_video(output_template, height):
+    return _common_opts({
+        'format': _video_format(height),
+        'outtmpl': output_template,
+        'quiet': True,
+        'no_warnings': True,
+        'nocheckcertificate': True,
+        'merge_output_format': 'mp4',
+        'noplaylist': True,
+        'retries': 5,
+        'fragment_retries': 5,
+        'socket_timeout': 30,
+        'concurrent_fragment_downloads': 4,
+        'http_headers': {
+            'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                           'AppleWebKit/537.36 (KHTML, like Gecko) '
+                           'Chrome/124.0.0.0 Safari/537.36'),
+            'Accept-Language': 'en-US,en;q=0.9',
+        },
+    })
+
+
 def get_ydl_opts_audio(output_template):
-    opts = {
+    return _common_opts({
         'format': 'bestaudio/best',
         'outtmpl': output_template,
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'noplaylist': True,
+        'retries': 5,
+        'fragment_retries': 5,
+        'socket_timeout': 30,
+        'http_headers': {
+            'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                           'AppleWebKit/537.36 (KHTML, like Gecko) '
+                           'Chrome/124.0.0.0 Safari/537.36'),
+        },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
-    }
-    if os.path.exists(COOKIES_FILE):
-        opts['cookiefile'] = COOKIES_FILE
-    if FFMPEG_LOCATION:
-        opts['ffmpeg_location'] = FFMPEG_LOCATION
-    return opts
+    })
+
 
 def check_sub(user_id):
     try:
-        if CHANNEL_USERNAME == "@قناتك_هنا": return True
         member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
         return member.status in ['member', 'administrator', 'creator']
-    except Exception: return True
+    except Exception:
+        # fail-open: لو فشل الفحص (مثلاً البوت ليس أدمن في القناة) نسمح بالمرور
+        return True
+
 
 def subscription_markup(lang):
     markup = InlineKeyboardMarkup(row_width=1)
-    if CHANNEL_USERNAME != "@قناتك_هنا":
-        markup.add(InlineKeyboardButton(texts[lang]['sub_tg'], url=f"https://t.me/{CHANNEL_USERNAME[1:]}"))
-    markup.add(InlineKeyboardButton(texts[lang]['sub_yt'], url=YOUTUBE_LINK))
+    markup.add(
+        InlineKeyboardButton(texts[lang]['sub_tg'], url=f"https://t.me/{CHANNEL_USERNAME[1:]}"),
+        InlineKeyboardButton(texts[lang]['sub_yt'], url=YOUTUBE_LINK)
+    )
     return markup
+
 
 def main_markup(lang):
     markup = InlineKeyboardMarkup(row_width=1)
@@ -347,6 +455,7 @@ def main_markup(lang):
         InlineKeyboardButton(texts[lang]['lang_btn'], callback_data="change_language")
     )
     return markup
+
 
 def lang_markup():
     markup = InlineKeyboardMarkup()
@@ -359,124 +468,185 @@ def lang_markup():
     markup.row(InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"))
     return markup
 
+
 def _report(chat_id, status_msg_id, text):
     try:
-        if status_msg_id: bot.edit_message_text(text, chat_id, status_msg_id)
-        else: bot.send_message(chat_id, text)
+        if status_msg_id:
+            bot.edit_message_text(text, chat_id, status_msg_id)
+        else:
+            bot.send_message(chat_id, text)
     except Exception:
-        try: bot.send_message(chat_id, text)
-        except Exception: pass
+        try:
+            bot.send_message(chat_id, text)
+        except Exception:
+            pass
+
 
 def _cleanup(prefix):
+    """حذف كل الملفات المؤقتة لهذا التحميل (بما فيها .part و .f140 ... إلخ)."""
     for f in glob.glob(f'{prefix}*'):
-        try: os.remove(f)
-        except Exception: pass
+        try:
+            os.remove(f)
+        except Exception:
+            pass
+
 
 def _find_output(prefix):
-    cands = [c for c in glob.glob(f'{prefix}*') if not c.endswith(('.part', '.ytdl', '.temp'))]
-    if not cands: return None
+    """يعثر على الملف النهائي متجاهلاً الملفات المؤقتة."""
+    cands = [c for c in glob.glob(f'{prefix}*')
+             if not c.endswith(('.part', '.ytdl', '.temp'))]
+    if not cands:
+        return None
+    # نفضّل mp4 إن وجد
     mp4 = [c for c in cands if c.lower().endswith('.mp4')]
     pick = (mp4 or cands)
+    # أكبر ملف هو الفيديو النهائي عادةً
     pick.sort(key=lambda p: os.path.getsize(p) if os.path.exists(p) else 0, reverse=True)
     return pick[0]
 
+
+# تحميل الفيديو مع خفض الجودة تلقائياً حتى يدخل تحت حد تيليجرام
 def download_video(chat_id, url, lang, status_msg_id=None, reply_to=None):
-    token2 = rand_token()
-    prefix = f'vid_{chat_id}_{token2}.'
-    template = f'vid_{chat_id}_{token2}.%(ext)s'
-    
-    try:
-        with yt_dlp.YoutubeDL(get_ydl_opts_video(template)) as ydl:
-            info = ydl.extract_info(url, download=True)
+    last_info = None
+    got_file_but_too_big = False
+    had_error = False
 
-        out_file = _find_output(prefix)
-        if not out_file or not os.path.exists(out_file):
+    for height in DOWNLOAD_HEIGHTS:
+        token2 = rand_token()
+        prefix = f'vid_{chat_id}_{token2}.'
+        template = f'vid_{chat_id}_{token2}.%(ext)s'
+        try:
+            with yt_dlp.YoutubeDL(get_ydl_opts_video(template, height)) as ydl:
+                info = ydl.extract_info(url, download=True)
+                last_info = info
+
+            out_file = _find_output(prefix)
+            if not out_file or not os.path.exists(out_file):
+                had_error = True
+                _cleanup(prefix)
+                continue
+
+            size_mb = os.path.getsize(out_file) / (1024 * 1024)
+            if size_mb > MAX_FILE_SIZE_MB:
+                got_file_but_too_big = True
+                _cleanup(prefix)
+                continue  # جرّب جودة أقل
+
+            # نجح وحجمه مناسب → أرسله
+            likes = (last_info.get('like_count') or 0) if last_info else 0
+            views = (last_info.get('view_count') or 0) if last_info else 0
+            duration = ((last_info.get('duration_string')
+                         or fmt_duration(last_info.get('duration')))
+                        if last_info else "0:00")
+
+            markup = InlineKeyboardMarkup()
+            markup.row(
+                InlineKeyboardButton(f"❤️ {likes:,}", callback_data="n"),
+                InlineKeyboardButton(f"👁 {views:,}", callback_data="n"),
+                InlineKeyboardButton(f"⏱ {duration}", callback_data="n")
+            )
+            markup.row(InlineKeyboardButton(
+                texts[lang]['share'],
+                url=f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME[1:]}"
+            ))
+
+            with open(out_file, 'rb') as f:
+                bot.send_video(chat_id, f, caption=texts[lang]['success'],
+                               reply_markup=markup, reply_to_message_id=reply_to,
+                               timeout=300, supports_streaming=True)
             _cleanup(prefix)
-            _report(chat_id, status_msg_id, texts[lang]['error'])
-            return False
+            return True
 
-        size_mb = os.path.getsize(out_file) / (1024 * 1024)
-        if size_mb > MAX_FILE_SIZE_MB:
+        except Exception as e:
+            had_error = True
+            print(f"Video download error (h={height}) for {chat_id}: {e}")
             _cleanup(prefix)
-            _report(chat_id, status_msg_id, texts[lang]['too_large'])
-            return False
+            continue
 
-        likes = (info.get('like_count') or 0) if info else 0
-        views = (info.get('view_count') or 0) if info else 0
-        duration = ((info.get('duration_string') or fmt_duration(info.get('duration'))) if info else "0:00")
-
-        markup = InlineKeyboardMarkup()
-        markup.row(
-            InlineKeyboardButton(f"❤️ {likes:,}", callback_data="n"),
-            InlineKeyboardButton(f"👁 {views:,}", callback_data="n"),
-            InlineKeyboardButton(f"⏱ {duration}", callback_data="n")
-        )
-        markup.row(InlineKeyboardButton(texts[lang]['share'], url=f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME[1:]}"))
-
-        with open(out_file, 'rb') as f:
-            bot.send_video(chat_id, f, caption=texts[lang]['success'],
-                           reply_markup=markup, reply_to_message_id=reply_to,
-                           timeout=300, supports_streaming=True)
-        _cleanup(prefix)
-        return True
-
-    except Exception as e:
-        print(f"Video download error for {chat_id}: {e}")
-        _cleanup(prefix)
+    # وصلنا هنا = فشل في كل الجودات
+    if got_file_but_too_big and not had_error:
+        _report(chat_id, status_msg_id, texts[lang]['too_large'])
+    elif got_file_but_too_big:
+        _report(chat_id, status_msg_id, texts[lang]['too_large'])
+    else:
         _report(chat_id, status_msg_id, texts[lang]['error'])
-        return False
+    return False
 
-def download_audio(chat_id, url, lang):
+
+# تحميل الصوت (mp3)
+def download_audio(chat_id, url, lang, status_msg_id=None):
     token2 = rand_token()
     prefix = f'aud_{chat_id}_{token2}.'
     template = f'aud_{chat_id}_{token2}.%(ext)s'
+    ok = False
     try:
         with yt_dlp.YoutubeDL(get_ydl_opts_audio(template)) as ydl:
             info = ydl.extract_info(url, download=True)
 
         out_file = f'aud_{chat_id}_{token2}.mp3'
         if not os.path.exists(out_file):
+            # احتياط: قد تختلف الامتداد قبل المعالجة
             alt = _find_output(prefix)
-            if alt and alt.lower().endswith('.mp3'): out_file = alt
+            if alt and alt.lower().endswith('.mp3'):
+                out_file = alt
 
         if os.path.exists(out_file):
             size_mb = os.path.getsize(out_file) / (1024 * 1024)
-            if size_mb <= MAX_FILE_SIZE_MB:
-                with open(out_file, 'rb') as f:
-                    bot.send_audio(
-                        chat_id, f,
-                        caption=texts[lang]['audio_cap'],
-                        title=(info.get('title') or 'Audio'),
-                        performer=BOT_USERNAME,
-                        timeout=300
-                    )
+            if size_mb > MAX_FILE_SIZE_MB:
+                return False
+            with open(out_file, 'rb') as f:
+                bot.send_audio(
+                    chat_id, f,
+                    caption=texts[lang]['audio_cap'],
+                    title=(info.get('title') or 'Audio'),
+                    performer=BOT_USERNAME,
+                    timeout=300
+                )
+            ok = True
     except Exception as e:
         print(f"Audio download error for {chat_id}: {e}")
     finally:
         _cleanup(prefix)
+    return ok
+
+
+# التحميل بالرابط: فيديو ثم صوت تلقائياً
+def clean_url(url):
+    """تنظيف الروابط قبل تمريرها (خاصة ثريدز/إنستغرام)."""
+    url = url.strip()
+    # ثريدز: تحويل threads.com إلى threads.net المدعوم، وإزالة لاحقات المشاركة
+    if "threads.com" in url or "threads.net" in url:
+        url = url.replace("threads.com", "threads.net")
+        # إزالة كل ما بعد ?  (مثل xmt= و slof=) لأنها تكسر المستخرج
+        url = url.split("?")[0]
+    return url
+
 
 def do_download_link(message, url, lang):
     chat_id = message.chat.id
-    if not check_sub(chat_id):
-        bot.reply_to(message, texts[lang]['force_sub'], reply_markup=subscription_markup(lang))
-        return
-
-    url = url.strip() # بدون أي تعديل أو قص يكسر الروابط
-    
+    url = clean_url(url)
     try:
         status = bot.reply_to(message, texts[lang]['processing'])
         status_id = status.message_id
     except Exception:
         status_id = None
 
+    # 1) الفيديو (مع خفض الجودة تلقائياً)
     download_video(chat_id, url, lang, status_id, reply_to=message.message_id)
 
-    try: download_audio(chat_id, url, lang)
-    except Exception: pass
-
+    # 2) الصوت تلقائياً
     try:
-        if status_id: bot.delete_message(chat_id, status_id)
-    except Exception: pass
+        download_audio(chat_id, url, lang)
+    except Exception as e:
+        print(f"Auto-audio error for {chat_id}: {e}")
+
+    # حذف رسالة "جاري التحميل"
+    try:
+        if status_id:
+            bot.delete_message(chat_id, status_id)
+    except Exception:
+        pass
+
 
 @bot.message_handler(commands=['start'])
 def handle_start(message):
@@ -487,6 +657,7 @@ def handle_start(message):
         bot.reply_to(message, texts[lang]['force_sub'], reply_markup=subscription_markup(lang))
         return
     bot.reply_to(message, texts[lang]['welcome'], reply_markup=main_markup(lang))
+
 
 @bot.message_handler(commands=['admin'])
 def handle_admin(message):
@@ -501,19 +672,25 @@ def handle_admin(message):
             "• /stats — عرض عدد المستخدمين\n"
             "• /cast رسالتك — إرسال إذاعة لجميع المستخدمين"
         )
+    else:
+        bot.reply_to(message, "عذراً، هذا الأمر مخصص لإدارة البوت فقط ❌")
+
 
 @bot.message_handler(commands=['stats'])
 def handle_stats(message):
     chat_id = message.chat.id
-    if chat_id != ADMIN_ID: return
+    if chat_id != ADMIN_ID:
+        return
     count = db_count_users()
     storage = "Supabase (دائم) ✅" if supabase_ready() else "ذاكرة مؤقتة ⚠️"
     bot.reply_to(message, f"📊 إحصائيات البوت\n\n👥 عدد المستخدمين: {count}\n💾 التخزين: {storage}")
 
+
 @bot.message_handler(commands=['cast'])
 def handle_cast(message):
     chat_id = message.chat.id
-    if chat_id != ADMIN_ID: return
+    if chat_id != ADMIN_ID:
+        return
     parts = message.text.split(None, 1)
     if len(parts) < 2 or not parts[1].strip():
         bot.reply_to(message, "اكتب الرسالة بعد الأمر هكذا:\n/cast رسالتكم")
@@ -521,63 +698,99 @@ def handle_cast(message):
     broadcast_msg = parts[1].strip()
     all_users = db_get_all_users()
     status = bot.reply_to(message, f"⏳ جاري الإرسال إلى {len(all_users)} مستخدم...")
-    success, failed = 0, 0
+    success = 0
+    failed = 0
     for i, uid in enumerate(all_users):
         try:
             bot.send_message(uid, f"📢 رسالة من الإدارة:\n\n{broadcast_msg}")
             success += 1
-        except Exception: failed += 1
-        time.sleep(1 if (i + 1) % 25 == 0 else 0.05)
-    try: bot.edit_message_text(f"✅ تم إرسال الإذاعة.\n\n📨 وصلت: {success}\n❌ فشلت: {failed}", chat_id, status.message_id)
-    except Exception: bot.reply_to(message, f"✅ تم الإرسال إلى {success} مستخدم.")
+        except Exception:
+            failed += 1
+        # تفادي حدود تيليجرام (rate limit)
+        if (i + 1) % 25 == 0:
+            time.sleep(1)
+        else:
+            time.sleep(0.05)
+    try:
+        bot.edit_message_text(
+            f"✅ تم إرسال الإذاعة.\n\n📨 وصلت: {success}\n❌ فشلت: {failed}",
+            chat_id, status.message_id
+        )
+    except Exception:
+        bot.reply_to(message, f"✅ تم الإرسال إلى {success} مستخدم.")
+
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_inline(call):
     chat_id = call.message.chat.id
     lang = user_langs.get(chat_id, 'ar')
+
     if call.data == "show_usage":
         bot.answer_callback_query(call.id)
         bot.send_message(chat_id, texts[lang]['usage'])
+
     elif call.data == "change_language":
         bot.answer_callback_query(call.id)
         bot.send_message(chat_id, texts[lang]['choose_lang'], reply_markup=lang_markup())
+
     elif call.data.startswith("lang_"):
         new_lang = call.data.split("_")[1]
         if new_lang in texts:
             user_langs[chat_id] = new_lang
             bot.answer_callback_query(call.id, "✅ Done", show_alert=False)
-            bot.edit_message_text(texts[new_lang]['welcome'], chat_id, call.message.message_id, reply_markup=main_markup(new_lang))
+            bot.edit_message_text(texts[new_lang]['welcome'], chat_id,
+                                  call.message.message_id, reply_markup=main_markup(new_lang))
+
     elif call.data == "n":
         bot.answer_callback_query(call.id)
 
+
 @bot.message_handler(func=lambda message: True)
 def process_url(message):
-    if not message.text: return
+    if not message.text:
+        return
     chat_id = message.chat.id
     db_add_user(chat_id)
     lang = user_langs.get(chat_id, 'ar')
     text = message.text.strip()
-    if text.startswith('/'): return
+
+    # تجاهل الأوامر غير المعروفة
+    if text.startswith('/'):
+        return
+
     if text.startswith("http"):
+        if not check_sub(chat_id):
+            bot.reply_to(message, texts[lang]['force_sub'], reply_markup=subscription_markup(lang))
+            return
+        # ننفّذ التحميل في خيط منفصل حتى لا يتجمّد البوت
         download_executor.submit(do_download_link, message, text, lang)
     else:
         bot.reply_to(message, texts[lang]['invalid_link'])
 
+
 def main():
-    print("✅ البوت يعمل الآن بكوده الأصلي والنظيف...")
-    try: bot.remove_webhook()
-    except Exception: pass
+    print("✅ البوت يعمل الآن...")
+    try:
+        # حذف أي webhook قديم وتجاهل التحديثات المعلّقة لتفادي تعارض 409
+        bot.remove_webhook()
+    except Exception:
+        pass
+    # مهلة بسيطة تسمح لأي نسخة سابقة بالتوقف قبل بدء الاستطلاع
     time.sleep(3)
+    # حلقة إعادة تشغيل تلقائية إذا انقطع الـ polling
     while True:
         try:
             bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
         except Exception as e:
             msg = str(e)
             if "409" in msg or "Conflict" in msg:
+                # نسخة أخرى تعمل بنفس التوكن — ننتظر أطول
+                print("⚠️ تعارض 409: نسخة أخرى من البوت تعمل. انتظار 15 ثانية...")
                 time.sleep(15)
             else:
+                print(f"Polling crashed, restarting in 5s: {e}")
                 time.sleep(5)
+
 
 if __name__ == "__main__":
     main()
-
