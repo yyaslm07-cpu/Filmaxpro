@@ -88,6 +88,31 @@ def _detect_ffmpeg():
 _detect_ffmpeg()
 
 
+# ====== كشف محرّك JavaScript — مطلوب ليوتيوب الحديث لفك تشفير الروابط ======
+# يوتيوب يفرض الآن تحدي n/SABR. بدون محرّك JS تظهر:
+# "Requested format is not available". أي من node أو deno يكفي.
+JS_RUNTIME_NAME = None   # 'node' أو 'deno'
+JS_RUNTIME_PATH = None
+
+
+def _detect_js_runtime():
+    global JS_RUNTIME_NAME, JS_RUNTIME_PATH
+    from shutil import which
+    # نجرّب بالترتيب: deno (الموصى به) ثم node (متوفر غالباً على Render)
+    for name in ("deno", "node", "nodejs", "bun"):
+        path = which(name)
+        if path:
+            JS_RUNTIME_NAME = "node" if name in ("node", "nodejs") else name
+            JS_RUNTIME_PATH = path
+            print(f"✅ محرّك JavaScript: {JS_RUNTIME_NAME} ({path})")
+            return
+    print("⚠️ لا يوجد محرّك JavaScript — يوتيوب سيفشل بـ 'format not available'. "
+          "ثبّت node أو deno.")
+
+
+_detect_js_runtime()
+
+
 # ====== بناء ملف الكوكيز من متغير بيئة (الحل ليوتيوب وثريدز على Render) ======
 # Render يمسح الملفات بين عمليات النشر، لذلك نخزّن محتوى cookies.txt في متغير
 # بيئة اسمه COOKIES_CONTENT، والكود يكتبه إلى ملف عند كل إقلاع.
@@ -365,6 +390,11 @@ def _common_opts(opts):
         opts['cookiefile'] = COOKIES_FILE
     if FFMPEG_LOCATION:
         opts['ffmpeg_location'] = FFMPEG_LOCATION
+    # محرّك JavaScript ليوتيوب (يحل 'Requested format is not available')
+    if JS_RUNTIME_NAME:
+        opts['js_runtimes'] = {JS_RUNTIME_NAME: {'path': JS_RUNTIME_PATH}}
+        # السماح بتنزيل سكربتات حل تحدي يوتيوب تلقائياً من GitHub
+        opts['remote_components'] = ['ejs:github']
     return opts
 
 
