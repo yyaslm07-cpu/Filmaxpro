@@ -1,8 +1,19 @@
 import os
-from flask import Flask
+import time
+import glob
+import string
+import secrets
+import subprocess
 from threading import Thread
 from concurrent.futures import ThreadPoolExecutor
-import time
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+
+from flask import Flask
+import telebot
+import telebot.apihelper as apihelper
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
+import yt_dlp
+import requests
 
 # تشغيل خادم ويب صغير لإرضاء Render
 app = Flask(__name__)
@@ -22,19 +33,8 @@ def run_web():
 Thread(target=run_web, daemon=True).start()
 
 # --- كود بوت التيليجرام ---
-
-# [ميزة خارقة] تحديث أداة التحميل تلقائياً عند كل إقلاع لمواكبة حماية ثريدز ويوتيوب
-print("🔄 جاري تحديث مكتبة yt-dlp تلقائياً لضمان دعم كافة المنصات...")
-os.system("pip install -U yt-dlp")
-
-import telebot
-import telebot.apihelper as apihelper
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
-import yt_dlp
-import secrets
-import string
-import glob
-import requests
+# ملاحظة: أُزيل التحديث التلقائي (os.system pip install) من هنا لأنه كان يبطّئ
+# الإقلاع كثيراً. ثبّت yt-dlp عبر requirements.txt وحدّثه يدوياً عند الحاجة.
 
 # مهلات أطول لرفع الملفات الكبيرة (مهم للملفات قرب 50MB على Render)
 apihelper.CONNECT_TIMEOUT = 30
@@ -86,6 +86,15 @@ def _detect_ffmpeg():
 
 
 _detect_ffmpeg()
+
+
+def _ffmpeg_bin():
+    """مسار تنفيذي ffmpeg لاستخدامه مع subprocess."""
+    if FFMPEG_LOCATION:
+        cand = os.path.join(FFMPEG_LOCATION, "ffmpeg")
+        if os.path.exists(cand):
+            return cand
+    return "ffmpeg"
 
 
 # ====== بناء ملف الكوكيز من متغير بيئة أو من الملفات السرية ======
@@ -288,7 +297,7 @@ texts = {
         'choose_lang': "अपनी भाषा चुनें 👇",
         'processing': "डाउनलोड हो रहा है... ⏳",
         'invalid_link': "कृपया केवल वैध लिंक भेजें ❌",
-        'success': f"سफलतापूर्वक डाउनलोड किया गया ✅\n{BOT_USERNAME}",
+        'success': f"سفलतापूर्वक डाउनलोड किया गया ✅\n{BOT_USERNAME}",
         'audio_cap': f"ऑडियो ट्रैक 🎵\n{BOT_USERNAME}",
         'share': "بॉट साझा करें 📤",
         'error': "एक त्रुटિ हुई। लिंक की जांच करें।",
@@ -356,11 +365,20 @@ def _common_opts(opts):
         opts['cookiefile'] = COOKIES_FILE
     if FFMPEG_LOCATION:
         opts['ffmpeg_location'] = FFMPEG_LOCATION
+    # إعدادات يوتيوب لتجاوز SABR واختيار عميل يُرجع روابط حقيقية (يحتاج محرك deno مثبتاً)
+    opts.setdefault('extractor_args', {})
+    opts['extractor_args'].setdefault('youtube', {'player_client': ['tv', 'ios', 'web_safari']})
     return opts
 
 
 def _video_format(height):
-    return f'bv*[height<={height}]+ba/b[height<={height}]/bv*+ba/b/best'
+    # [إصلاح الصورة] الحارس [vcodec!=none] يمنع اختيار صورة/ثَمبنيل بدل الفيديو نهائياً
+    return (
+        f'b[height<={height}][vcodec!=none][acodec!=none]'
+        f'/bv*[height<={height}]+ba'
+        f'/b[height<={height}][vcodec!=none]'
+        f'/bv*+ba/b[vcodec!=none]'
+    )
 
 
 def get_ydl_opts_video(output_template, height):
@@ -372,22 +390,20 @@ def get_ydl_opts_video(output_template, height):
         'nocheckcertificate': True,
         'merge_output_format': 'mp4',
         'noplaylist': True,
-        'retries': 3,  # تقليل المحاولات لتجنب التعليق والبطء عند وجود رابط غير مدعوم
+        'retries': 3,
         'fragment_retries': 3,
         'socket_timeout': 15,
-        'concurrent_fragment_downloads': 4,
-        'http_headers': {
-            'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                           'AppleWebKit/537.36 (KHTML, like Gecko) '
-                           'Chrome/124.0.0.0 Safari/537.36'),
-            'Accept-Language': 'en-US,en;q=0.9',
-        },
+        'concurrent_fragment_downloads': 8,
+        # [إصلاح يوتيوب] أُزيل الـ User-Agent المفروض لأنه كان يربك إدارة yt-dlp
+        # لعملاء يوتيوب. نترك yt-dlp يضبط الترويسة المناسبة لكل عميل تلقائياً.
+        'http_headers': {'Accept-Language': 'en-US,en;q=0.9'},
     })
 
 
 def get_ydl_opts_audio(output_template):
+    # يُستخدم فقط كاحتياطي للمنصات الصوتية البحتة (ساوند كلاود، PMC Music…)
     return _common_opts({
-        'format': 'bestaudio/best',
+        'format': 'bestaudio/best[acodec!=none]',
         'outtmpl': output_template,
         'quiet': True,
         'no_warnings': True,
@@ -396,11 +412,7 @@ def get_ydl_opts_audio(output_template):
         'retries': 3,
         'fragment_retries': 3,
         'socket_timeout': 15,
-        'http_headers': {
-            'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                           'AppleWebKit/537.36 (KHTML, like Gecko) '
-                           'Chrome/124.0.0.0 Safari/537.36'),
-        },
+        'http_headers': {'Accept-Language': 'en-US,en;q=0.9'},
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -478,10 +490,26 @@ def _find_output(prefix):
     return pick[0]
 
 
+def _extract_audio_from_file(video_path, chat_id, token):
+    """[إصلاح السرعة] استخراج الصوت محلياً من ملف الفيديو المُحمَّل بدل إعادة التنزيل."""
+    out_mp3 = f'aud_{chat_id}_{token}.mp3'
+    try:
+        subprocess.run(
+            [_ffmpeg_bin(), '-y', '-i', video_path, '-vn',
+             '-acodec', 'libmp3lame', '-b:a', '192k', out_mp3],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+        if os.path.exists(out_mp3) and os.path.getsize(out_mp3) > 0:
+            return out_mp3
+    except Exception as e:
+        print(f"ffmpeg audio extract error: {e}")
+    return None
+
+
 def download_video(chat_id, url, lang, status_msg_id=None, reply_to=None):
+    """يحمّل ويرسل الفيديو. عند النجاح يُرجع (مسار_الملف, info) دون حذف الملف
+    حتى يستطيع المتصل استخراج الصوت منه. عند الفشل يُرجع (None, None)."""
     last_info = None
     got_file_but_too_big = False
-    had_error = False
 
     for height in DOWNLOAD_HEIGHTS:
         token2 = rand_token()
@@ -494,7 +522,6 @@ def download_video(chat_id, url, lang, status_msg_id=None, reply_to=None):
 
             out_file = _find_output(prefix)
             if not out_file or not os.path.exists(out_file):
-                had_error = True
                 _cleanup(prefix)
                 continue
 
@@ -520,11 +547,10 @@ def download_video(chat_id, url, lang, status_msg_id=None, reply_to=None):
                 bot.send_video(chat_id, f, caption=texts[lang]['success'],
                                reply_markup=markup, reply_to_message_id=reply_to,
                                timeout=300, supports_streaming=True)
-            _cleanup(prefix)
-            return True
+            # لا ننظّف هنا: نُبقي الملف لاستخراج الصوت منه في do_download_link
+            return out_file, last_info
 
         except Exception as e:
-            had_error = True
             print(f"Video download error (h={height}) for {chat_id}: {e}")
             _cleanup(prefix)
             continue
@@ -533,10 +559,40 @@ def download_video(chat_id, url, lang, status_msg_id=None, reply_to=None):
         _report(chat_id, status_msg_id, texts[lang]['too_large'])
     else:
         _report(chat_id, status_msg_id, texts[lang]['error'])
-    return False
+    return None, None
 
 
-def download_audio(chat_id, url, lang):
+def send_audio_from_video(chat_id, video_path, lang, info):
+    """[إصلاح السرعة] يرسل الصوت مستخرجاً من ملف الفيديو نفسه (بدون تنزيل ثانٍ)."""
+    token = rand_token()
+    mp3 = _extract_audio_from_file(video_path, chat_id, token)
+    if not mp3:
+        return False
+    try:
+        size_mb = os.path.getsize(mp3) / (1024 * 1024)
+        if size_mb > MAX_FILE_SIZE_MB:
+            return False
+        with open(mp3, 'rb') as f:
+            bot.send_audio(
+                chat_id, f,
+                caption=texts[lang]['audio_cap'],
+                title=((info or {}).get('title') or 'Audio'),
+                performer=BOT_USERNAME,
+                timeout=300
+            )
+        return True
+    except Exception as e:
+        print(f"send audio error for {chat_id}: {e}")
+        return False
+    finally:
+        try:
+            os.remove(mp3)
+        except Exception:
+            pass
+
+
+def download_audio_direct(chat_id, url, lang):
+    """احتياطي للمنصات الصوتية البحتة عندما لا يوجد فيديو إطلاقاً."""
     token2 = rand_token()
     prefix = f'aud_{chat_id}_{token2}.'
     template = f'aud_{chat_id}_{token2}.%(ext)s'
@@ -571,14 +627,19 @@ def download_audio(chat_id, url, lang):
     return ok
 
 
-# [الإصلاح الجذري لفشل ثريدز] تحويل دقيق للنطاق وإزالة زوائد المشاركة
+# [إصلاح ثريدز] تحويل النطاق + إزالة معاملات التتبّع فقط (مع الحفاظ على watch?v= ليوتيوب)
+TRACKING_PARAMS = {"si", "igshid", "utm_source", "utm_medium", "utm_campaign", "feature", "fbclid"}
+
+
 def clean_url(url):
     url = url.strip()
-    if "threads.com" in url or "threads.net" in url:
+    if "threads.com" in url:
         url = url.replace("threads.com", "threads.net")
-    if "?" in url:
-        url = url.split("?")[0]
-    return url
+    parts = urlparse(url)
+    if parts.query:
+        kept = {k: v for k, v in parse_qs(parts.query).items() if k not in TRACKING_PARAMS}
+        parts = parts._replace(query=urlencode(kept, doseq=True))
+    return urlunparse(parts)
 
 
 def do_download_link(message, url, lang):
@@ -594,12 +655,26 @@ def do_download_link(message, url, lang):
     except Exception:
         status_id = None
 
-    download_video(chat_id, url, lang, status_id, reply_to=message.message_id)
+    video_path, info = download_video(chat_id, url, lang, status_id, reply_to=message.message_id)
 
-    try:
-        download_audio(chat_id, url, lang)
-    except Exception as e:
-        print(f"Auto-audio error for {chat_id}: {e}")
+    if video_path:
+        # نجح الفيديو → استخرج الصوت محلياً من الملف نفسه (سريع)
+        try:
+            send_audio_from_video(chat_id, video_path, lang, info)
+        except Exception as e:
+            print(f"Auto-audio error for {chat_id}: {e}")
+        finally:
+            # تنظيف ملف الفيديو وأي شظايا دمج تحمل نفس البادئة
+            try:
+                _cleanup(os.path.splitext(video_path)[0] + '.')
+            except Exception:
+                pass
+    else:
+        # لا فيديو (قد تكون منصة صوتية بحتة) → تنزيل صوت مباشر كاحتياطي
+        try:
+            download_audio_direct(chat_id, url, lang)
+        except Exception as e:
+            print(f"Direct audio error for {chat_id}: {e}")
 
     try:
         if status_id:
