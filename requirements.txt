@@ -1,6 +1,5 @@
 flask
 pyTelegramBotAPI
-yt-dlp[default]
-yt-dlp-ejs
+yt-dlp
 requests
 imageio-ffmpeg
